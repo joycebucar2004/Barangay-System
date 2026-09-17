@@ -1,0 +1,20 @@
+{
+  "name": "barangay-system-server",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "2.4.3",
+    "cors": "2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "4.22.2",
+    "jsonwebtoken": "9.0.2",
+    "multer": "2.2.0",
+    "mysql2": "^3.23.2",
+    "nodemailer": "^9.0.4"
+  }
+}

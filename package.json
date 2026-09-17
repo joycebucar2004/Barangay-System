@@ -1,0 +1,15 @@
+{
+  "name": "barangay-system",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Root orchestration for the Barangay Campagao document request system (frontend + server).",
+  "scripts": {
+    "install:all": "npm install --prefix server && npm install --prefix frontend",
+    "dev": "concurrently -n SERVER,FRONTEND -c blue,green \"npm run dev --prefix server\" \"npm run dev --prefix frontend\"",
+    "dev:server": "npm run dev --prefix server",
+    "dev:frontend": "npm run dev --prefix frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
