@@ -167,6 +167,9 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
               { label: "Fee", value: req.fee === 0 ? "Free" : `₱${req.fee}` },
               { label: "Payment", value: req.paid ? "Paid" : "Unpaid" },
               { label: "Certificate", value: req.printedAt ? `Printed ${new Date(req.printedAt).toLocaleDateString()}` : "Not yet printed" },
+              ...(req.source === "Walk-in"
+                ? [{ label: "Filed Via", value: `Walk-in — encoded by ${req.encodedByName || req.encodedBy || "staff"}` }]
+                : []),
             ].map(({ label, value }) => (
               <div key={label}>
                 <div className="text-sm text-muted-foreground mb-0.5">{label}</div>
@@ -190,7 +193,8 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
             <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-2">Requirements Checklist</div>
             <div className="space-y-1.5">
               {requirements.map((r, i) => {
-                const matchingFile = req.files.find((f) => f.requirement === r.requirement);
+                const presentedInPerson = !!req.requirementsPresented?.includes(r.requirement);
+                const matchingFile = req.files.find((f) => f.requirement === r.requirement) || presentedInPerson;
                 return (
                   <div key={i} className="flex items-center gap-2 text-base">
                     {matchingFile ? (
@@ -202,6 +206,7 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
                     <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${r.required ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-500"}`}>
                       {r.required ? "Required" : "Optional"}
                     </span>
+                    {presentedInPerson && <span className="text-xs text-emerald-600 font-semibold ml-auto">Presented in person</span>}
                     {!matchingFile && r.required && <span className="text-xs text-red-500 font-semibold ml-auto">Missing</span>}
                   </div>
                 );

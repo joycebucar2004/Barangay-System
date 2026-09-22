@@ -31,12 +31,13 @@ CREATE TABLE users (
   gender         ENUM('Male','Female','Other') NOT NULL,
   civil_status   ENUM('Single','Married','Widowed','Separated','Divorced') NOT NULL DEFAULT 'Single',
   date_of_birth  DATE NOT NULL,
-  email          VARCHAR(150) NOT NULL,
+  email          VARCHAR(150) NULL,         -- NULL for walk-in records
   password_hash  VARCHAR(255) NOT NULL,
   temp_password  VARCHAR(255) DEFAULT NULL, -- plaintext; set on creation, cleared once the user sets their own password
   address        VARCHAR(255) NOT NULL DEFAULT '',
   contact_no     VARCHAR(30)  NOT NULL DEFAULT '',
   status         ENUM('Pending','Denied','Approved') NOT NULL DEFAULT 'Pending',
+  account_type   ENUM('Online','Walk-in') NOT NULL DEFAULT 'Online', -- Walk-in = encoded by staff at the counter, cannot log in
   joined         DATE NOT NULL,
   last_login_at  DATETIME DEFAULT NULL, -- drives the Active/Inactive display once Approved (Inactive after 1 year with no login)
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -97,6 +98,8 @@ CREATE TABLE requests (
   doc_type       VARCHAR(100) NOT NULL,
   status         ENUM('Pending','Verified','Approved','Ready for Pickup','Released','Rejected','Cancelled')
                  NOT NULL DEFAULT 'Pending',
+  source         ENUM('Online','Walk-in') NOT NULL DEFAULT 'Online',
+  encoded_by     VARCHAR(20) DEFAULT NULL,    -- staff id that encoded a walk-in request
   purpose        VARCHAR(255) NOT NULL,
   submitted_at   DATE NOT NULL,
   updated_at     DATE NOT NULL,
@@ -108,6 +111,7 @@ CREATE TABLE requests (
   date_of_birth  DATE DEFAULT NULL,           -- snapshot from the resident, for printed certificates
   civil_status   VARCHAR(20) DEFAULT NULL,    -- snapshot from the resident, for printed certificates
   remarks        VARCHAR(500) DEFAULT NULL,
+  requirements_presented TEXT DEFAULT NULL,   -- JSON array of requirements staff checked in person (walk-in)
   FOREIGN KEY (resident_id) REFERENCES users(id),
   FOREIGN KEY (doc_type) REFERENCES document_types(name),
   KEY idx_requests_resident (resident_id),

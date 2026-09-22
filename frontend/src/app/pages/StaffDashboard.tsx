@@ -5,6 +5,7 @@ import { RequestRow } from "../components/RequestRow";
 import { RequestDetailModal } from "../components/RequestDetailModal";
 import { AddUserModal } from "../components/AddUserModal";
 import { NotificationsPanel } from "../components/NotificationsPanel";
+import { WalkInRequestForm } from "../components/WalkInRequestForm";
 import type { ApiDocumentType, ApiNotification, ApiRequest, ApiUser, Role, RequestStatus, UserProfileInput } from "../lib/api";
 
 const TABLE_HEADERS = ["Request ID", "Name", "Document / Purpose", "Status", "Payment", "Submitted", "Action"];
@@ -29,6 +30,7 @@ export function StaffDashboard({
   onDeleteNotification,
   onDeleteAllNotifications,
   onCreateUser,
+  onCreateWalkInRequest,
 }: {
   section: string;
   requests: ApiRequest[];
@@ -43,6 +45,7 @@ export function StaffDashboard({
   onDeleteNotification: (id: string) => void;
   onDeleteAllNotifications: () => void;
   onCreateUser: (payload: UserProfileInput & { role: Role }) => Promise<void>;
+  onCreateWalkInRequest: (formData: FormData) => Promise<ApiRequest>;
 }) {
   const [selectedRequest, setSelectedRequest] = useState<ApiRequest | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -82,6 +85,16 @@ export function StaffDashboard({
         <AddUserModal onClose={() => setShowAddUser(false)} onCreate={onCreateUser} lockRoleToResident />
       )}
 
+      {section === "walk-in" && (
+        <>
+          <div>
+            <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Walk-in Request</h2>
+            <p className="text-muted-foreground text-base">For someone at the counter who doesn't have an online account. The request joins the normal queue.</p>
+          </div>
+          <WalkInRequestForm docTypes={docTypes} residents={residents} onSubmit={onCreateWalkInRequest} />
+        </>
+      )}
+
       {section === "residents" && (
         <>
           <div className="flex items-center justify-between">
@@ -111,11 +124,15 @@ export function StaffDashboard({
                         <span className="font-semibold text-base text-foreground">{u.name}</span>
                       </div>
                     </td>
-                    <td className="px-5 py-3.5 text-base text-muted-foreground">{u.email}</td>
+                    <td className="px-5 py-3.5 text-base text-muted-foreground">{u.email || "—"}</td>
                     <td className="px-5 py-3.5 text-base text-muted-foreground">{u.contactNo || "—"}</td>
                     <td className="px-5 py-3.5 text-base text-muted-foreground">{u.joined}</td>
                     <td className="px-5 py-3.5">
-                      <span className={`text-sm font-semibold px-2 py-0.5 rounded-full ${STAFF_STATUS_STYLE[u.status]}`}>{u.status}</span>
+                      {u.accountType === "Walk-in" ? (
+                        <span className="text-sm font-semibold px-2 py-0.5 rounded-full text-orange-700 bg-orange-50">Walk-in</span>
+                      ) : (
+                        <span className={`text-sm font-semibold px-2 py-0.5 rounded-full ${STAFF_STATUS_STYLE[u.status || "Pending"]}`}>{u.status}</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -149,7 +166,7 @@ export function StaffDashboard({
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 mb-4">
               {[
-                { icon: <ClipboardList size={16} />, label: "Pending", desc: "Resident submits a request with required files attached." },
+                { icon: <ClipboardList size={16} />, label: "Pending", desc: "Resident submits online, or you encode a Walk-in Request at the counter." },
                 { icon: <Eye size={16} />, label: "Verified", desc: "You check the uploaded files and verify or reject them." },
                 { icon: <ShieldCheck size={16} />, label: "Approved", desc: "You give final approval, then print the official certificate." },
                 { icon: <Package size={16} />, label: "Ready for Pickup", desc: "Once printed and the fee is paid, mark it ready at the Barangay Hall." },

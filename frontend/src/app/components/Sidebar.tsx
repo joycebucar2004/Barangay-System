@@ -1,4 +1,4 @@
-import { Home, Plus, ClipboardList, Bell, Eye, Shield, Users, FileText, BarChart2, Settings, LogOut, Megaphone, Banknote } from "lucide-react";
+import { Home, Plus, ClipboardList, Bell, Eye, Shield, Users, FileText, BarChart2, Settings, LogOut, Megaphone, Banknote, UserPlus } from "lucide-react";
 import { BarangayLogo } from "./BarangayLogo";
 import type { Role } from "../lib/api";
 
@@ -30,6 +30,7 @@ export function Sidebar({
   ];
   const staffNav: NavItem[] = [
     { id: "dashboard", label: "Dashboard", icon: <Home size={19} /> },
+    { id: "walk-in", label: "Walk-in Request", icon: <UserPlus size={19} /> },
     { id: "queue", label: "Request Queue", icon: <ClipboardList size={19} /> },
     { id: "verified", label: "For Verification", icon: <Eye size={19} /> },
     { id: "release", label: "Payment & Release", icon: <Banknote size={19} /> },

@@ -8,6 +8,7 @@ const STATUS_STYLE: Record<UserDisplayStatus, string> = {
   Denied: "text-red-700 bg-red-500/15 border-red-300/40",
   Active: "text-emerald-700 bg-emerald-500/15 border-emerald-300/40",
   Inactive: "text-slate-600 bg-slate-500/15 border-slate-300/40",
+  "Walk-in": "text-orange-100 bg-orange-500/20 border-orange-300/40",
 };
 
 const ROLE_STYLE: Record<string, string> = {
@@ -87,6 +88,11 @@ export function UserDetailModal({ userId, onClose }: { userId: string; onClose: 
             </div>
 
             <div className="p-6 space-y-5">
+              {user.accountType === "Walk-in" ? (
+                <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3.5 text-sm text-orange-800">
+                  <span className="font-bold">Walk-in record.</span> Staff encoded this person at the counter. There's no email or password, so it can't be used to sign in.
+                </div>
+              ) : (
               <div className={`rounded-xl border px-4 py-3.5 shadow-sm ${user.tempPassword ? "border-amber-200 bg-gradient-to-br from-amber-50 to-amber-100/60" : "border-border bg-[#f7f9fc]"}`}>
                 <div className={`flex items-center gap-2 text-sm font-bold mb-2 ${user.tempPassword ? "text-amber-900" : "text-muted-foreground"}`}>
                   <KeyRound size={16} /> Temporary Password (First Login)
@@ -106,6 +112,7 @@ export function UserDetailModal({ userId, onClose }: { userId: string; onClose: 
                   </p>
                 )}
               </div>
+              )}
 
               <div>
                 <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1 px-1">Contact Information</div>

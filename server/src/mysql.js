@@ -5,10 +5,17 @@ config({ quiet: true });
 
 const { DB_HOST = "localhost", DB_PORT = "3306", DB_USER = "root", DB_PASSWORD = "", DB_NAME = "barangay" } = process.env;
 
+// Hosted MySQL (e.g. Hostinger) usually forbids CREATE DATABASE, so only try it when the DB is missing.
 async function ensureDatabase() {
-  const conn = await mysql.createConnection({ host: DB_HOST, port: Number(DB_PORT), user: DB_USER, password: DB_PASSWORD });
-  await conn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\``);
-  await conn.end();
+  try {
+    const conn = await mysql.createConnection({ host: DB_HOST, port: Number(DB_PORT), user: DB_USER, password: DB_PASSWORD, database: DB_NAME });
+    await conn.end();
+  } catch (err) {
+    if (err.code !== "ER_BAD_DB_ERROR") throw err;
+    const conn = await mysql.createConnection({ host: DB_HOST, port: Number(DB_PORT), user: DB_USER, password: DB_PASSWORD });
+    await conn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\``);
+    await conn.end();
+  }
 }
 
 try {
@@ -17,6 +24,9 @@ try {
   console.error(
     `\nCould not connect to MySQL at ${DB_HOST}:${DB_PORT} (user "${DB_USER}").\n` +
       `Make sure MySQL is running and that server/.env has the right DB_HOST/DB_PORT/DB_USER/DB_PASSWORD.\n` +
+      (err.code === "ER_ACCESS_DENIED_ERROR" && DB_HOST !== "localhost" && DB_HOST !== "127.0.0.1"
+        ? `For a hosted database, also allow your IP under the host's "Remote MySQL" settings.\n`
+        : "") +
       `Original error: ${err.code || err.message}\n`
   );
   process.exit(1);

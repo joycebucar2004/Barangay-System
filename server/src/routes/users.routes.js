@@ -83,6 +83,9 @@ usersRouter.patch("/:id/status", authRequired, requireRole("admin"), async (req,
     }
     const user = await getUserById(req.params.id);
     if (!user) return res.status(404).json({ error: "User not found" });
+    if (user.accountType === "Walk-in") {
+      return res.status(400).json({ error: "Walk-in records have no login account, so there's no status to change." });
+    }
     if (user.status === "Approved") {
       return res.status(400).json({ error: "Active accounts can't be changed manually — they only go Inactive automatically after a year with no login." });
     }

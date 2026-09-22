@@ -1,6 +1,8 @@
 import { Router } from "express";
-import { getUserById, fullName, listDocumentTypes, listRequestsForResident, listAllRequests, getRequestById, createRequest, addRequestFiles, replaceRequestFile, updateRequestStatus, markRequestPaid, markRequestPrinted } from "../db.js";
-import { authRequired, requireRole } from "../auth.js";
+import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
+import { getUserById, fullName, listDocumentTypes, listRequestsForResident, listAllRequests, getRequestById, createRequest, createWalkInResident, addRequestFiles, replaceRequestFile, updateRequestStatus, markRequestPaid, markRequestPrinted } from "../db.js";
+import { authRequired, requireRole, toPublicUser } from "../auth.js";
 import { upload } from "../upload.js";
 import { notifyUser, notifyRole } from "../notify.js";
 
@@ -96,6 +98,109 @@ requestsRouter.post("/", authRequired, requireRole("resident"), upload.array("fi
   }
 });
 
+const VALID_GENDERS = ["Male", "Female", "Other"];
+const VALID_CIVIL_STATUSES = ["Single", "Married", "Widowed", "Separated", "Divorced"];
+
+function toArray(value) {
+  return Array.isArray(value) ? value : value ? [value] : [];
+}
+
+// Staff encoding a request for someone at the counter who has no online account. Either picks
+// an existing resident record (residentId) or supplies personal details for a new walk-in record.
+// Requirements are checked in person (requirementsPresented); scans are optional.
+requestsRouter.post("/walk-in", authRequired, requireRole("staff"), upload.array("files", 10), async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const docType = (body.docType || "").trim();
+    const purpose = (body.purpose || "").trim();
+    if (!docType || !purpose) return res.status(400).json({ error: "Document type and purpose are required" });
+
+    const documentTypes = await listDocumentTypes();
+    const docConfig = documentTypes.find((d) => d.name === docType);
+    if (!docConfig) return res.status(400).json({ error: "Unknown document type" });
+
+    const validNames = docConfig.requirements.map((r) => r.requirement);
+    let presented;
+    try {
+      presented = toArray(body.requirementsPresented ? JSON.parse(body.requirementsPresented) : []);
+    } catch {
+      return res.status(400).json({ error: "Invalid requirements checklist" });
+    }
+    presented = presented.filter((name) => validNames.includes(name));
+
+    const files = req.files || [];
+    const requirementLabels = toArray(body.requirementLabels);
+    if (requirementLabels.length !== files.length || requirementLabels.some((l) => !validNames.includes(l))) {
+      return res.status(400).json({ error: "Each uploaded file must be matched to a requirement" });
+    }
+
+    const covered = new Set([...presented, ...requirementLabels]);
+    const missing = docConfig.requirements.filter((r) => r.required && !covered.has(r.requirement)).map((r) => r.requirement);
+    if (missing.length > 0) {
+      return res.status(400).json({ error: `Missing required document(s): ${missing.join(", ")}` });
+    }
+
+    let resident;
+    if (body.residentId) {
+      resident = await getUserById(body.residentId);
+      if (!resident || resident.role !== "resident") return res.status(404).json({ error: "Resident not found" });
+      if (resident.accountType !== "Walk-in" && resident.status !== "Approved") {
+        return res.status(400).json({ error: "This resident's online account isn't approved yet" });
+      }
+    } else {
+      const firstName = (body.firstName || "").trim();
+      const lastName = (body.lastName || "").trim();
+      const { gender, civilStatus, dateOfBirth } = body;
+      if (!firstName || !lastName || !gender || !civilStatus || !dateOfBirth) {
+        return res.status(400).json({ error: "First name, last name, gender, civil status and date of birth are required" });
+      }
+      if (!VALID_GENDERS.includes(gender)) return res.status(400).json({ error: "Invalid gender" });
+      if (!VALID_CIVIL_STATUSES.includes(civilStatus)) return res.status(400).json({ error: "Invalid civil status" });
+      if (Number.isNaN(Date.parse(dateOfBirth)) || new Date(dateOfBirth) > new Date()) {
+        return res.status(400).json({ error: "Invalid date of birth" });
+      }
+      resident = await createWalkInResident({
+        firstName,
+        middleName: (body.middleName || "").trim(),
+        lastName,
+        gender,
+        civilStatus,
+        dateOfBirth,
+        address: (body.address || "").trim(),
+        contactNo: (body.contactNo || "").trim(),
+        unusablePasswordHash: bcrypt.hashSync(crypto.randomBytes(32).toString("hex"), 10),
+      });
+    }
+
+    const request = await createRequest({
+      residentId: resident.id,
+      residentName: fullName(resident),
+      docType,
+      purpose,
+      fee: docConfig.fee,
+      paid: docConfig.fee === 0,
+      address: resident.address,
+      contactNo: resident.contactNo,
+      dateOfBirth: resident.dateOfBirth,
+      civilStatus: resident.civilStatus || "",
+      source: "Walk-in",
+      encodedBy: req.userId,
+      requirementsPresented: presented,
+    });
+    const savedFiles = files.map((f, i) => ({ originalName: f.originalname, storedName: f.filename, requirement: requirementLabels[i] }));
+    await addRequestFiles(request.id, savedFiles);
+
+    if (resident.accountType !== "Walk-in") {
+      await notifyUser(resident.id, `A walk-in ${docType} request (${request.id}) was filed for you at the Barangay Hall.`);
+    }
+    await notifyRole("admin", `Walk-in ${docType} request (${request.id}) for ${fullName(resident)} was encoded by staff.`);
+
+    res.status(201).json({ request: await getRequestById(request.id), resident: toPublicUser(resident) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 requestsRouter.patch("/:id/status", authRequired, requireRole("staff", "admin"), async (req, res, next) => {
   try {
     const { status, remarks } = req.body || {};
@@ -125,7 +230,7 @@ requestsRouter.patch("/:id/status", authRequired, requireRole("staff", "admin"),
       "Ready for Pickup": `Your ${request.docType} (${request.id}) is ready for pickup at the Barangay Hall.`,
       Released: `Your ${request.docType} (${request.id}) has been released. Thank you!`,
     };
-    if (messages[status]) await notifyUser(request.residentId, messages[status]);
+    if (messages[status] && request.residentAccountType !== "Walk-in") await notifyUser(request.residentId, messages[status]);
     if (status === "Verified") await notifyRole("staff", `Request ${request.id} (${request.docType}) is verified and awaiting approval.`);
     if (status === "Approved") await notifyRole("admin", `Request ${request.id} (${request.docType}) has been approved by staff.`);
 

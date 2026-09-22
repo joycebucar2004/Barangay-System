@@ -95,7 +95,7 @@ export default function App() {
     if (activeSection === "users" && user.role === "admin") {
       api.listUsers().then(({ users }) => setUsers(users)).catch((err: any) => toast.error(err.message));
     }
-    if (activeSection === "residents" && user.role === "staff") {
+    if ((activeSection === "residents" || activeSection === "walk-in") && user.role === "staff") {
       api.listUsers().then(({ users }) => setUsers(users)).catch((err: any) => toast.error(err.message));
     }
     if (activeSection === "reports" && (user.role === "admin" || user.role === "staff")) {
@@ -159,6 +159,14 @@ export default function App() {
     setRequests((prev) => [request, ...prev]);
     toast.success(`Request ${request.id} submitted.`);
     refreshNotifications();
+    return request;
+  }
+
+  async function handleCreateWalkInRequest(formData: FormData) {
+    const { request, resident } = await api.createWalkInRequest(formData);
+    setRequests((prev) => [request, ...prev]);
+    setUsers((prev) => (prev.some((u) => u.id === resident.id) ? prev : [resident, ...prev]));
+    toast.success(`Walk-in request ${request.id} saved.`);
     return request;
   }
 
@@ -348,6 +356,7 @@ export default function App() {
             onDeleteNotification={handleDeleteNotification}
             onDeleteAllNotifications={handleDeleteAllNotifications}
             onCreateUser={handleCreateUser}
+            onCreateWalkInRequest={handleCreateWalkInRequest}
           />
         )}
         {user.role === "admin" && (

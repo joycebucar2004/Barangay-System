@@ -9,6 +9,9 @@ import { usersRouter } from "./src/routes/users.routes.js";
 import { reportsRouter } from "./src/routes/reports.routes.js";
 import { announcementsRouter } from "./src/routes/announcements.routes.js";
 import { UPLOAD_DIR } from "./src/upload.js";
+import { ensureWalkInSchema } from "./src/db.js";
+
+await ensureWalkInSchema();
 
 const app = express();
 const PORT = process.env.PORT || 4000;

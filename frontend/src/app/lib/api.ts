@@ -6,12 +6,16 @@ export type CivilStatus = "Single" | "Married" | "Widowed" | "Separated" | "Divo
 export type UserStatus = "Pending" | "Denied" | "Approved";
 // What the UI actually shows for status: Approved reads as "Active" (or "Inactive" once dormant
 // for a year), while Pending/Denied are shown as-is. Computed server-side in toPublicUser().
-export type UserDisplayStatus = "Pending" | "Denied" | "Active" | "Inactive";
+export type UserDisplayStatus = "Pending" | "Denied" | "Active" | "Inactive" | "Walk-in";
+// Walk-in = record encoded by staff for someone without an online account; it can't sign in.
+export type AccountType = "Online" | "Walk-in";
+export type RequestSource = "Online" | "Walk-in";
 
 export interface ApiUser {
   id: string;
   name: string; // computed full name (first + middle initial + last), for display
-  email: string;
+  email: string | null;
+  accountType?: AccountType;
   role: Role;
   // Admin accounts (role: "admin") live in a separate table with no profile fields --
   // these are only present for resident/staff accounts.
@@ -58,8 +62,13 @@ export interface ApiRequest {
   id: string;
   residentId: string;
   residentName: string;
+  residentAccountType?: AccountType;
   docType: string;
   status: RequestStatus;
+  source?: RequestSource;
+  encodedBy?: string | null;
+  encodedByName?: string | null;
+  requirementsPresented?: string[];
   purpose: string;
   submittedAt: string;
   updatedAt: string;
@@ -111,6 +120,11 @@ export interface ReportsSummary {
   monthly: { month: string; requests: number }[];
   distribution: { name: string; value: number; color: string }[];
   statusCounts: Record<string, number>;
+  sources?: {
+    requests: Record<RequestSource, number>;
+    requestsThisMonth: Record<RequestSource, number>;
+    residents: Record<AccountType, number>;
+  };
 }
 
 const API_BASE = (import.meta as any).env?.VITE_API_URL || "http://localhost:4000/api";
@@ -174,6 +188,9 @@ export const api = {
   },
   async createRequest(formData: FormData) {
     return request<{ request: ApiRequest }>("/requests", { method: "POST", body: formData });
+  },
+  async createWalkInRequest(formData: FormData) {
+    return request<{ request: ApiRequest; resident: ApiUser }>("/requests/walk-in", { method: "POST", body: formData });
   },
   async updateRequestStatus(id: string, status: RequestStatus, remarks?: string) {
     return request<{ request: ApiRequest }>(`/requests/${id}/status`, {

@@ -24,7 +24,9 @@ export async function authRequired(req, res, next) {
     }
 
     const user = await getUserById(payload.sub);
-    if (!user || user.status !== "Approved") {
+    // The token's role must match the table the account actually lives in, so a session can never
+    // be resolved to a different account type (and permission set) than the one that logged in.
+    if (!user || user.role !== payload.role || user.status !== "Approved" || user.accountType === "Walk-in") {
       return res.status(401).json({ error: "This account is no longer active. Please sign in again." });
     }
     req.userId = payload.sub;
@@ -48,6 +50,7 @@ export function requireRole(...roles) {
 // full year passes with no login (falling back to the joined date if they've never logged in).
 // Pending/Denied pass through unchanged — those are still admin-driven decisions.
 export function computeDisplayStatus(user) {
+  if (user.accountType === "Walk-in") return "Walk-in";
   if (user.status !== "Approved") return user.status;
   const reference = user.lastLoginAt || user.joined;
   const referenceTime = reference ? new Date(reference).getTime() : NaN;

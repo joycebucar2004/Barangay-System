@@ -1,5 +1,49 @@
 import { pool } from "./mysql.js";
 
+async function columnExists(table, column) {
+  const [rows] = await pool.query(
+    "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+    [table, column]
+  );
+  return rows.length > 0;
+}
+
+// Idempotent, non-destructive: only adds columns / relaxes NOT NULL on email, never drops data.
+export async function ensureWalkInSchema() {
+  if (!(await columnExists("users", "account_type"))) {
+    await pool.query("ALTER TABLE users ADD COLUMN account_type ENUM('Online','Walk-in') NOT NULL DEFAULT 'Online' AFTER status");
+  }
+  // Walk-in residents have no email; UNIQUE still allows any number of NULLs.
+  await pool.query("ALTER TABLE users MODIFY email VARCHAR(150) NULL");
+  if (!(await columnExists("requests", "source"))) {
+    await pool.query("ALTER TABLE requests ADD COLUMN source ENUM('Online','Walk-in') NOT NULL DEFAULT 'Online' AFTER status");
+  }
+  if (!(await columnExists("requests", "encoded_by"))) {
+    await pool.query("ALTER TABLE requests ADD COLUMN encoded_by VARCHAR(20) DEFAULT NULL AFTER source");
+  }
+  if (!(await columnExists("requests", "requirements_presented"))) {
+    await pool.query("ALTER TABLE requests ADD COLUMN requirements_presented TEXT DEFAULT NULL");
+  }
+  await ensureCounters();
+}
+
+// Recreates the id counters if the table is missing, starting from the highest id already in
+// use so new ids never collide with existing ones. INSERT IGNORE leaves existing counters alone.
+async function ensureCounters() {
+  await pool.query("CREATE TABLE IF NOT EXISTS counters (name VARCHAR(30) PRIMARY KEY, value INT NOT NULL DEFAULT 0) ENGINE=InnoDB");
+  const [[max]] = await pool.query(`
+    SELECT
+      (SELECT IFNULL(MAX(CAST(SUBSTRING(id, 6) AS UNSIGNED)), 0) FROM users WHERE id LIKE 'R-ID-%') AS resident,
+      (SELECT IFNULL(MAX(CAST(SUBSTRING(id, 6) AS UNSIGNED)), 0) FROM staff WHERE id LIKE 'S-ID-%') AS staff,
+      (SELECT IFNULL(MAX(CAST(SUBSTRING_INDEX(id, '-', -1) AS UNSIGNED)), 0) FROM requests) AS request,
+      (SELECT IFNULL(MAX(CAST(SUBSTRING(id, 2) AS UNSIGNED)), 0) FROM notifications WHERE id LIKE 'n%') AS notification,
+      (SELECT IFNULL(MAX(CAST(SUBSTRING(id, 2) AS UNSIGNED)), 0) FROM announcements WHERE id LIKE 'a%') AS announcement
+  `);
+  for (const [name, value] of Object.entries(max)) {
+    await pool.query("INSERT IGNORE INTO counters (name, value) VALUES (?, ?)", [name, Number(value)]);
+  }
+}
+
 export function fullName(user) {
   const middleInitial = user.middleName ? `${user.middleName.trim()[0]}.` : "";
   return [user.firstName, middleInitial, user.lastName].filter(Boolean).join(" ");
@@ -29,9 +73,20 @@ function mapUser(row, role) {
     address: row.address,
     contactNo: row.contact_no,
     status: row.status,
+    accountType: row.account_type || "Online",
     joined: row.joined,
     lastLoginAt: row.last_login_at,
   };
+}
+
+function parseJsonArray(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 // Resident and staff ids are role-prefixed (R-ID-/S-ID-, see nextId() below), so which table an
@@ -51,8 +106,13 @@ function mapRequest(row) {
     id: row.id,
     residentId: row.resident_id,
     residentName: row.resident_name,
+    residentAccountType: row.resident_account_type || "Online",
     docType: row.doc_type,
     status: row.status,
+    source: row.source || "Online",
+    encodedBy: row.encoded_by || null,
+    encodedByName: row.encoded_by_name || null,
+    requirementsPresented: parseJsonArray(row.requirements_presented),
     purpose: row.purpose,
     submittedAt: row.submitted_at,
     updatedAt: row.updated_at,
@@ -97,7 +157,8 @@ async function nextId(counterName, prefix, pad = 0) {
 // ============================================================
 
 export async function getUserByEmail(email) {
-  const [residentRows] = await pool.query("SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1", [email]);
+  // A users row carrying a staff id is a stray duplicate of a staff account -- never treat it as a resident.
+  const [residentRows] = await pool.query("SELECT * FROM users WHERE LOWER(email) = LOWER(?) AND id NOT LIKE 'S-ID-%' LIMIT 1", [email]);
   if (residentRows[0]) return mapUser(residentRows[0], "resident");
   const [staffRows] = await pool.query("SELECT * FROM staff WHERE LOWER(email) = LOWER(?) LIMIT 1", [email]);
   return mapUser(staffRows[0], "staff");
@@ -110,7 +171,7 @@ export async function getUserById(id) {
 }
 
 export async function listUsers() {
-  const [residentRows] = await pool.query("SELECT * FROM users ORDER BY created_at DESC");
+  const [residentRows] = await pool.query("SELECT * FROM users WHERE id NOT LIKE 'S-ID-%' ORDER BY created_at DESC");
   const [staffRows] = await pool.query("SELECT * FROM staff ORDER BY created_at DESC");
   const users = [...residentRows.map((r) => mapUser(r, "resident")), ...staffRows.map((r) => mapUser(r, "staff"))];
   users.sort((a, b) => (b.joined || "").localeCompare(a.joined || ""));
@@ -125,6 +186,18 @@ export async function createUser({ firstName, middleName, lastName, gender, civi
     `INSERT INTO ${table} (id, first_name, middle_name, last_name, gender, civil_status, date_of_birth, email, password_hash, temp_password, address, contact_no, status, joined)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, firstName, middleName || "", lastName, gender, civilStatus, dateOfBirth, email, passwordHash, tempPassword || null, address || "", contactNo || "", status, joined]
+  );
+  return getUserById(id);
+}
+
+// A resident record with no login: no email, and a hash of random bytes nobody knows.
+export async function createWalkInResident({ firstName, middleName, lastName, gender, civilStatus, dateOfBirth, address, contactNo, unusablePasswordHash }) {
+  const id = await nextId("resident", "R-ID-", 3);
+  const joined = new Date().toISOString().split("T")[0];
+  await pool.query(
+    `INSERT INTO users (id, first_name, middle_name, last_name, gender, civil_status, date_of_birth, email, password_hash, temp_password, address, contact_no, status, account_type, joined)
+     VALUES (?,?,?,?,?,?,?,NULL,?,NULL,?,?,'Approved','Walk-in',?)`,
+    [id, firstName, middleName || "", lastName, gender, civilStatus, dateOfBirth, unusablePasswordHash, address || "", contactNo || "", joined]
   );
   return getUserById(id);
 }
@@ -233,7 +306,7 @@ async function attachFiles(requests) {
   return requests;
 }
 
-export async function createRequest({ residentId, residentName, docType, purpose, fee, paid, address, contactNo, dateOfBirth, civilStatus }) {
+export async function createRequest({ residentId, residentName, docType, purpose, fee, paid, address, contactNo, dateOfBirth, civilStatus, source = "Online", encodedBy = null, requirementsPresented = null }) {
   const year = new Date().getFullYear();
   await pool.query("UPDATE counters SET value = value + 1 WHERE name = 'request'");
   const [[row]] = await pool.query("SELECT value FROM counters WHERE name = 'request'");
@@ -241,9 +314,12 @@ export async function createRequest({ residentId, residentName, docType, purpose
   const today = new Date().toISOString().split("T")[0];
 
   await pool.query(
-    `INSERT INTO requests (id, resident_id, doc_type, status, purpose, submitted_at, updated_at, fee, paid, address, contact_no, date_of_birth, civil_status)
-     VALUES (?,?,?,'Pending',?,?,?,?,?,?,?,?,?)`,
-    [id, residentId, docType, purpose, today, today, fee, paid ? 1 : 0, address || "", contactNo || "", dateOfBirth || null, civilStatus || null]
+    `INSERT INTO requests (id, resident_id, doc_type, status, source, encoded_by, requirements_presented, purpose, submitted_at, updated_at, fee, paid, address, contact_no, date_of_birth, civil_status)
+     VALUES (?,?,?,'Pending',?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [
+      id, residentId, docType, source, encodedBy, requirementsPresented ? JSON.stringify(requirementsPresented) : null,
+      purpose, today, today, fee, paid ? 1 : 0, address || "", contactNo || "", dateOfBirth || null, civilStatus || null,
+    ]
   );
   const request = await getRequestById(id);
   request.residentName = residentName;
@@ -266,8 +342,11 @@ export async function replaceRequestFile(requestId, requirement, file) {
 
 async function requestsWithResidentName(whereSql, params) {
   const [rows] = await pool.query(
-    `SELECT r.*, CONCAT(u.first_name, IF(u.middle_name <> '', CONCAT(' ', LEFT(u.middle_name,1), '.'), ''), ' ', u.last_name) AS resident_name
+    `SELECT r.*, CONCAT(u.first_name, IF(u.middle_name <> '', CONCAT(' ', LEFT(u.middle_name,1), '.'), ''), ' ', u.last_name) AS resident_name,
+            u.account_type AS resident_account_type,
+            CONCAT(s.first_name, ' ', s.last_name) AS encoded_by_name
      FROM requests r JOIN users u ON u.id = r.resident_id
+     LEFT JOIN staff s ON s.id = r.encoded_by
      ${whereSql} ORDER BY r.submitted_at DESC`,
     params
   );
@@ -458,4 +537,24 @@ export async function reportRevenueSummary() {
       (SELECT IFNULL(SUM(fee), 0) FROM requests WHERE paid = 1) AS revenue
   `);
   return { totalThisMonth: row.totalThisMonth, releasedThisMonth: row.releasedThisMonth, revenue: Number(row.revenue) };
+}
+
+export async function reportSourceSummary() {
+  const [rows] = await pool.query(`
+    SELECT source,
+           COUNT(*) AS total,
+           SUM(YEAR(submitted_at) = YEAR(CURDATE()) AND MONTH(submitted_at) = MONTH(CURDATE())) AS thisMonth
+    FROM requests GROUP BY source
+  `);
+  const [[residents]] = await pool.query("SELECT SUM(account_type = 'Walk-in') AS walkIn, SUM(account_type = 'Online') AS online FROM users");
+  const result = {
+    requests: { Online: 0, "Walk-in": 0 },
+    requestsThisMonth: { Online: 0, "Walk-in": 0 },
+    residents: { Online: Number(residents.online || 0), "Walk-in": Number(residents.walkIn || 0) },
+  };
+  for (const r of rows) {
+    result.requests[r.source] = Number(r.total);
+    result.requestsThisMonth[r.source] = Number(r.thisMonth || 0);
+  }
+  return result;
 }

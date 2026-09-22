@@ -39,9 +39,10 @@ const TABLE_HEADERS = ["Request ID", "Name", "Document / Purpose", "Status", "Pa
 const STATUS_ORDER: RequestStatus[] = ["Pending", "Verified", "Approved", "Ready for Pickup", "Released", "Rejected", "Cancelled"];
 
 function exportRequestsCsv(requests: ApiRequest[]) {
-  const header = "ID,Resident,Document,Status,Fee,Paid,Submitted,Updated\n";
+  const header = "ID,Resident,Document,Source,Encoded By,Status,Fee,Paid,Submitted,Updated\n";
+  const csvCell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const rows = requests
-    .map((r) => [r.id, r.residentName, r.docType, r.status, r.fee, r.paid, r.submittedAt, r.updatedAt].join(","))
+    .map((r) => [r.id, r.residentName, r.docType, r.source || "Online", r.encodedByName || "", r.status, r.fee, r.paid, r.submittedAt, r.updatedAt].map(csvCell).join(","))
     .join("\n");
   const blob = new Blob([header + rows], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
@@ -66,6 +67,7 @@ const DISPLAY_STATUS_STYLE: Record<UserDisplayStatus, string> = {
   Denied: "text-red-700 bg-red-50 border-red-200",
   Active: "text-green-700 bg-green-50 border-green-200",
   Inactive: "text-gray-600 bg-gray-100 border-gray-200",
+  "Walk-in": "text-orange-700 bg-orange-50 border-orange-200",
 };
 
 const ANNOUNCEMENT_TAGS: AnnouncementTag[] = ["Advisory", "Announcement", "Event", "Notice"];
@@ -287,6 +289,33 @@ export function AdminDashboard({
               <StatCard label="Revenue Collected" value={`₱${reports.revenue.toLocaleString()}`} icon={<DollarSign size={20} className="text-[#d4a017]" />} color="bg-amber-50" />
             </div>
 
+            {reports.sources && (
+              <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
+                <h4 className="text-lg font-bold text-foreground mb-4" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Online vs Walk-in</h4>
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                  {[
+                    { label: "Requests (all time)", online: reports.sources.requests.Online, walkIn: reports.sources.requests["Walk-in"] },
+                    { label: "Requests this month", online: reports.sources.requestsThisMonth.Online, walkIn: reports.sources.requestsThisMonth["Walk-in"] },
+                    { label: "Resident records", online: reports.sources.residents.Online, walkIn: reports.sources.residents["Walk-in"] },
+                  ].map((row) => (
+                    <div key={row.label} className="p-3 rounded-lg bg-[#f0f3f8]">
+                      <div className="text-sm text-muted-foreground mb-2">{row.label}</div>
+                      <div className="flex items-baseline gap-4">
+                        <div>
+                          <div className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{row.online}</div>
+                          <div className="text-xs font-semibold text-blue-700">Online</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{row.walkIn}</div>
+                          <div className="text-xs font-semibold text-orange-700">Walk-in</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
                 <h4 className="text-lg font-bold text-foreground mb-4" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Monthly Requests</h4>
@@ -340,7 +369,12 @@ export function AdminDashboard({
         {showAddUser && <AddUserModal onClose={() => setShowAddUser(false)} onCreate={onCreateUser} />}
         {viewUserId && <UserDetailModal userId={viewUserId} onClose={() => setViewUserId(null)} />}
         <div className="flex items-center justify-between">
-          <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>User Accounts</h2>
+          <div>
+            <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>User Accounts</h2>
+            <p className="text-muted-foreground text-base">
+              {users.filter((u) => u.accountType === "Walk-in").length} walk-in record(s) added by staff. These have no login.
+            </p>
+          </div>
           <button onClick={() => setShowAddUser(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-base font-semibold hover:bg-primary/90 transition-colors">
             <Plus size={16} /> Add User
           </button>
@@ -366,14 +400,14 @@ export function AdminDashboard({
                   </td>
                   <td className="px-5 py-3.5 text-base text-muted-foreground">{u.gender}</td>
                   <td className="px-5 py-3.5 text-base text-muted-foreground">{u.dateOfBirth}</td>
-                  <td className="px-5 py-3.5 text-base text-muted-foreground">{u.email}</td>
+                  <td className="px-5 py-3.5 text-base text-muted-foreground">{u.email || "—"}</td>
                   <td className="px-5 py-3.5 text-base text-muted-foreground">{u.contactNo || "—"}</td>
                   <td className="px-5 py-3.5">
                     <span className={`text-sm font-semibold px-2 py-0.5 rounded-full capitalize ${u.role === "staff" ? "bg-indigo-50 text-indigo-700" : u.role === "admin" ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"}`}>{u.role}</span>
                   </td>
                   <td className="px-5 py-3.5 text-base text-muted-foreground">{u.joined}</td>
                   <td className="px-5 py-3.5">
-                    {u.status === "Approved" ? (
+                    {u.status === "Approved" || u.accountType === "Walk-in" ? (
                       <span className={`text-sm font-semibold px-2.5 py-1 rounded-full border ${DISPLAY_STATUS_STYLE[u.displayStatus || "Active"]}`}>
                         {u.displayStatus}
                       </span>
