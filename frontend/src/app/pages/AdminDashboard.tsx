@@ -33,7 +33,8 @@ import { StatusBadge } from "../components/StatusBadge";
 import { AddUserModal } from "../components/AddUserModal";
 import { UserDetailModal } from "../components/UserDetailModal";
 import { NotificationsPanel } from "../components/NotificationsPanel";
-import type { AnnouncementTag, ApiAnnouncement, ApiDocumentType, ApiDocumentTypeRequirement, ApiNotification, ApiRequest, ApiUser, ReportsSummary, RequestStatus, Role, UserProfileInput, UserStatus, UserDisplayStatus } from "../lib/api";
+import { CertificateEditorModal } from "../components/CertificateEditorModal";
+import type { CertificateContent, AnnouncementTag, ApiAnnouncement, ApiDocumentType, ApiDocumentTypeRequirement, ApiNotification, ApiRequest, ApiUser, ReportsSummary, RequestStatus, Role, UserProfileInput, UserStatus, UserDisplayStatus } from "../lib/api";
 
 const TABLE_HEADERS = ["Request ID", "Name", "Document / Purpose", "Status", "Payment", "Submitted", "Action"];
 const STATUS_ORDER: RequestStatus[] = ["Pending", "Verified", "Approved", "Ready for Pickup", "Released", "Rejected", "Cancelled"];
@@ -90,6 +91,7 @@ export function AdminDashboard({
   notifications,
   onStatusChange,
   onMarkPaid,
+  onSaveCertificateTemplate,
   onCreateUser,
   onUpdateUserStatus,
   onUpdateDocumentType,
@@ -111,6 +113,7 @@ export function AdminDashboard({
   notifications: ApiNotification[];
   onStatusChange: (id: string, s: RequestStatus, remarks?: string) => void;
   onMarkPaid: (id: string) => void;
+  onSaveCertificateTemplate: (name: string, template: CertificateContent | null) => Promise<void>;
   onCreateUser: (payload: UserProfileInput & { role: Role }) => Promise<void>;
   onUpdateUserStatus: (id: string, status: UserStatus) => Promise<void>;
   onUpdateDocumentType: (name: string, payload: { fee?: number; requirements?: ApiDocumentTypeRequirement[] }) => Promise<void>;
@@ -135,6 +138,7 @@ export function AdminDashboard({
   const [showAddUser, setShowAddUser] = useState(false);
   const [viewUserId, setViewUserId] = useState<string | null>(null);
   const [editingDoc, setEditingDoc] = useState<string | null>(null);
+  const [templateDoc, setTemplateDoc] = useState<string | null>(null);
   const [editFee, setEditFee] = useState(0);
   const [editReqs, setEditReqs] = useState<ApiDocumentTypeRequirement[]>([]);
 
@@ -445,8 +449,12 @@ export function AdminDashboard({
   }
 
   if (section === "documents") {
+    const templateDocType = docTypes.find((d) => d.name === templateDoc);
     return (
       <div className="p-8 space-y-6">
+        {templateDocType && (
+          <CertificateEditorModal docType={templateDocType} onClose={() => setTemplateDoc(null)} onSave={onSaveCertificateTemplate} />
+        )}
         <div className="flex items-center justify-between">
           <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Document Types & Fees</h2>
           <button onClick={() => setShowNewDoc((v) => !v)} className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-base font-semibold hover:bg-primary/90 transition-colors">
@@ -557,8 +565,14 @@ export function AdminDashboard({
                     <div>
                       <div className="text-lg font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{doc.name}</div>
                       <div className="text-base text-muted-foreground">Fee: <span className="font-semibold text-foreground">{doc.fee === 0 ? "Free (Indigent)" : `₱${doc.fee}`}</span></div>
+                      <div className="text-sm text-muted-foreground">Certificate: {doc.certificateTemplate ? <span className="font-semibold text-indigo-700">Custom template</span> : "Default wording"}</div>
                     </div>
-                    <button onClick={() => startEdit(doc)} className="text-sm text-primary font-semibold hover:underline px-3 py-1 rounded-lg border border-primary/20 hover:bg-primary/5 transition-colors">Edit</button>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setTemplateDoc(doc.name)} className="text-sm text-white bg-primary font-semibold px-3 py-1 rounded-lg hover:bg-primary/90 transition-colors" title="Edit the certificate wording used for every request of this type">
+                        Edit Certificate
+                      </button>
+                      <button onClick={() => startEdit(doc)} className="text-sm text-primary font-semibold hover:underline px-3 py-1 rounded-lg border border-primary/20 hover:bg-primary/5 transition-colors">Edit Fee & Requirements</button>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {doc.requirements.map((r, i) => (

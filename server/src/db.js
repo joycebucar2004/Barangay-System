@@ -24,6 +24,9 @@ export async function ensureWalkInSchema() {
   if (!(await columnExists("requests", "requirements_presented"))) {
     await pool.query("ALTER TABLE requests ADD COLUMN requirements_presented TEXT DEFAULT NULL");
   }
+  if (!(await columnExists("document_types", "certificate_template"))) {
+    await pool.query("ALTER TABLE document_types ADD COLUMN certificate_template MEDIUMTEXT DEFAULT NULL");
+  }
   await ensureCounters();
 }
 
@@ -77,6 +80,16 @@ function mapUser(row, role) {
     joined: row.joined,
     lastLoginAt: row.last_login_at,
   };
+}
+
+function parseJsonObject(value) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function parseJsonArray(value) {
@@ -259,13 +272,13 @@ export async function getAdminById(id) {
 // ============================================================
 
 export async function listDocumentTypes() {
-  const [types] = await pool.query("SELECT name, fee FROM document_types ORDER BY name");
+  const [types] = await pool.query("SELECT name, fee, certificate_template FROM document_types ORDER BY name");
   const [reqs] = await pool.query("SELECT document_type_name, requirement, required FROM document_type_requirements ORDER BY document_type_name, sort_order");
   const byName = {};
   for (const r of reqs) {
     (byName[r.document_type_name] ||= []).push({ requirement: r.requirement, required: !!r.required });
   }
-  return types.map((t) => ({ name: t.name, fee: Number(t.fee), requirements: byName[t.name] || [] }));
+  return types.map((t) => ({ name: t.name, fee: Number(t.fee), requirements: byName[t.name] || [], certificateTemplate: parseJsonObject(t.certificate_template) }));
 }
 
 export async function addDocumentType(name, fee) {
@@ -276,6 +289,11 @@ export async function addDocumentType(name, fee) {
 
 export async function addDocumentTypeRequirement(name, requirement, sortOrder, required = true) {
   await pool.query("INSERT INTO document_type_requirements (document_type_name, requirement, required, sort_order) VALUES (?, ?, ?, ?)", [name, requirement, required ? 1 : 0, sortOrder]);
+}
+
+// template = null resets the document type to the built-in certificate wording.
+export async function setDocumentTypeCertificateTemplate(name, template) {
+  await pool.query("UPDATE document_types SET certificate_template = ? WHERE name = ?", [template ? JSON.stringify(template) : null, name]);
 }
 
 export async function updateDocumentTypeFee(name, fee) {

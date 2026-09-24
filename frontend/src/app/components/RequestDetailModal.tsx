@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
+import { toast } from "sonner";
 import { X, Check, CheckCircle, Circle, Shield, Package, Printer, FileText, Banknote, ScrollText, Upload, Ban, RefreshCw } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 import { api } from "../lib/api";
-import { printCertificate, previewCertificateSoftCopy } from "../lib/certificate";
+import { openCertificatePdf } from "../lib/certificate";
 import type { ApiDocumentType, ApiRequest, Role, RequestStatus } from "../lib/api";
 
 const PRINTABLE_STATUSES: RequestStatus[] = ["Approved", "Ready for Pickup", "Released"];
@@ -48,7 +49,8 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
   // Printing the official certificate is staff's job, and no longer waits on payment -- that's
   // collected afterward. Residents never print it themselves, and admin is view-only here.
   const canPrintCertificate = role === "staff" && PRINTABLE_STATUSES.includes(req.status) && !!onPrintCertificate;
-  const canPreviewSoftCopy = (role === "staff" || role === "admin") && SOFT_COPY_STATUSES.includes(req.status);
+  // Staff/admin can view the soft copy from Verified onward; residents once it's approved.
+  const canPreviewSoftCopy = role === "resident" ? PRINTABLE_STATUSES.includes(req.status) : SOFT_COPY_STATUSES.includes(req.status);
   const canMarkReady = role === "staff" && req.status === "Approved" && !!req.printedAt && req.paid;
   const canMarkReleased = role === "staff" && req.status === "Ready for Pickup";
   const canResubmit = role === "resident" && EDITABLE_STATUSES.includes(req.status) && !!onResubmit;
@@ -60,10 +62,19 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
     if (!onPrintCertificate) return;
     setPrinting(true);
     try {
-      const updated = await onPrintCertificate(req.id);
-      printCertificate(updated || req);
+      await openCertificatePdf(() => onPrintCertificate(req.id), { soft: false });
+    } catch {
+      toast.error("Could not generate the certificate PDF.");
     } finally {
       setPrinting(false);
+    }
+  }
+
+  async function handlePreview() {
+    try {
+      await openCertificatePdf(req, { soft: true });
+    } catch {
+      toast.error("Could not generate the certificate PDF.");
     }
   }
 
@@ -333,7 +344,7 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
             </div>
           )}
 
-          {(role === "staff" || role === "admin" || canPrintCertificate || canResubmit || canCancel) && !anySubFormOpen && (
+          {(role === "staff" || role === "admin" || canPrintCertificate || canResubmit || canCancel || canPreviewSoftCopy) && !anySubFormOpen && (
             <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border">
               {canCollectPayment && (
                 <button
@@ -382,11 +393,11 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
                 <div className="flex items-center gap-2 ml-auto">
                   {canPreviewSoftCopy && (
                     <button
-                      onClick={() => previewCertificateSoftCopy(req)}
-                      title="Preview the auto-filled certificate — click any text in it to correct details before formal approval"
+                      onClick={handlePreview}
+                      title="Open a read-only PDF soft copy of the certificate"
                       className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border text-muted-foreground text-base font-semibold hover:bg-muted transition-colors"
                     >
-                      <ScrollText size={16} /> Soft Copy Preview
+                      <ScrollText size={16} /> {role === "resident" ? "View Certificate (PDF)" : "Soft Copy (PDF)"}
                     </button>
                   )}
                   {canPrintCertificate && (

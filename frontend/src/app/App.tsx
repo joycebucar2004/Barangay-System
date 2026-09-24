@@ -17,6 +17,7 @@ import type {
   ApiNotification,
   ApiRequest,
   ApiUser,
+  CertificateContent,
   ReportsSummary,
   Role,
   RequestStatus,
@@ -152,6 +153,12 @@ export default function App() {
       toast.error(err.message || "Could not print the certificate.");
       return null;
     }
+  }
+
+  async function handleSaveCertificateTemplate(name: string, template: CertificateContent | null) {
+    const { documentType } = await api.saveCertificateTemplate(name, template);
+    setDocTypes((prev) => prev.map((d) => (d.name === name ? documentType : d)));
+    toast.success(template ? `${name} certificate template saved.` : `${name} certificate reset to the default wording.`);
   }
 
   async function handleSubmitRequest(formData: FormData) {
@@ -370,6 +377,7 @@ export default function App() {
             notifications={notifications}
             onStatusChange={handleStatusChange}
             onMarkPaid={handleMarkPaid}
+            onSaveCertificateTemplate={handleSaveCertificateTemplate}
             onCreateUser={handleCreateUser}
             onUpdateUserStatus={handleUpdateUserStatus}
             onUpdateDocumentType={handleUpdateDocumentType}

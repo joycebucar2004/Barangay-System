@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Eye, CheckCircle, Shield, Package, Check, Banknote, Printer } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
-import { printCertificate } from "../lib/certificate";
+import { toast } from "sonner";
+import { openCertificatePdf } from "../lib/certificate";
 import type { ApiRequest, RequestStatus, Role } from "../lib/api";
 
 const actionButtonClass = "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors";
@@ -33,8 +34,9 @@ export function RequestRow({ req, onView, showActions, role, onStatusChange, onM
     if (!onPrintCertificate) return;
     setPrinting(true);
     try {
-      const updated = await onPrintCertificate(req.id);
-      printCertificate(updated || req);
+      await openCertificatePdf(() => onPrintCertificate(req.id), { soft: false });
+    } catch {
+      toast.error("Could not generate the certificate PDF.");
     } finally {
       setPrinting(false);
     }

@@ -52,6 +52,16 @@ export interface UserProfileInput {
   contactNo?: string;
 }
 
+// Certificate wording for one document type. Each field is limited HTML (bold/italic/underline/
+// line breaks) containing {{PLACEHOLDER}} tokens that are filled in per request.
+export interface CertificateContent {
+  title: string;
+  body: string;
+  issued: string;
+  signatoryName: string;
+  signatoryTitle: string;
+}
+
 export interface ApiRequestFile {
   originalName: string;
   storedName: string;
@@ -101,6 +111,7 @@ export interface ApiDocumentType {
   name: string;
   fee: number;
   requirements: ApiDocumentTypeRequirement[];
+  certificateTemplate?: CertificateContent | null; // null = built-in wording
 }
 
 export type AnnouncementTag = "Advisory" | "Announcement" | "Event" | "Notice";
@@ -237,6 +248,13 @@ export const api = {
     return request<{ documentType: ApiDocumentType }>(`/document-types/${encodeURIComponent(name)}`, {
       method: "PUT",
       body: JSON.stringify(payload),
+    });
+  },
+
+  async saveCertificateTemplate(name: string, template: CertificateContent | null) {
+    return request<{ documentType: ApiDocumentType }>(`/document-types/${encodeURIComponent(name)}/certificate-template`, {
+      method: "PUT",
+      body: JSON.stringify({ template }),
     });
   },
 
