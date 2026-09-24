@@ -132,15 +132,19 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,28,46,0.6)", backdropFilter: "blur(4px)" }}>
-      <div className="bg-card rounded-2xl border border-border shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-        <div className="flex items-center justify-between p-6 border-b border-border">
-          <div>
-            <div className="text-sm font-mono text-primary font-semibold mb-1">{req.id}</div>
-            <h3 className="text-xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{req.docType}</h3>
+      <div className="ui-modal bg-card rounded-2xl border border-border shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+        <div className="relative flex items-center justify-between overflow-hidden rounded-t-2xl p-6 text-white" style={{ background: "linear-gradient(120deg, #0d2244 0%, #1a3a6b 60%, #24508f 100%)" }}>
+          <div className="absolute inset-x-0 bottom-0 h-1" style={{ background: "linear-gradient(90deg, #d4a017, rgba(212,160,23,0.15))" }} />
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-[#f3d27a] ring-1 ring-white/20"><FileText size={20} /></div>
+            <div>
+              <div className="text-sm font-mono font-semibold text-[#f3d27a]">{req.id}</div>
+              <h3 className="text-xl font-bold" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{req.docType}</h3>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <StatusBadge status={req.status} />
-            <button onClick={onClose} className="p-2 rounded-lg hover:bg-muted text-muted-foreground transition-colors"><X size={18} /></button>
+            <button onClick={onClose} className="p-2 rounded-lg text-white/70 hover:bg-white/10 hover:text-white transition-colors"><X size={18} /></button>
           </div>
         </div>
 

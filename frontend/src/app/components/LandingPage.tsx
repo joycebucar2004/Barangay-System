@@ -22,7 +22,9 @@ import {
   UserSearch,
   type LucideIcon,
 } from "lucide-react";
+import { api } from "../lib/api";
 import type { ApiAnnouncement, ApiDocumentType, AnnouncementTag } from "../lib/api";
+import { CertificateShowcase } from "./CertificateShowcase";
 
 const NAV_LINKS = [
   { id: "home", label: "Home" },
@@ -173,10 +175,6 @@ export function LandingPage({
 
         <div className="relative max-w-[1600px] w-full mx-auto grid lg:grid-cols-2 gap-16 items-center">
           <div>
-            <div className="inline-flex items-center gap-2 bg-white/10 border border-white/15 rounded-full px-4 py-2 text-blue-100 text-sm font-semibold mb-8">
-              <BarangayLogo size={16} />
-              Official Barangay Portal
-            </div>
             <h1
               className="text-white text-5xl sm:text-6xl lg:text-7xl font-extrabold leading-tight mb-6"
               style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
@@ -205,31 +203,28 @@ export function LandingPage({
 
           </div>
 
-          {announcements.length > 0 && (
-            <div className="hidden lg:block">
-              <div className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-sm space-y-4">
-                <div className="text-blue-100 text-base font-semibold mb-1">Latest Announcement</div>
-                <div className="bg-white rounded-2xl p-7 shadow-lg">
-                  <div className="flex items-center gap-3 mb-3">
-                    <span className={`inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-full ${ANNOUNCEMENT_STYLE[announcements[0].tag].tagColor}`}>
-                      {(() => { const Icon = ANNOUNCEMENT_STYLE[announcements[0].tag].icon; return <Icon size={15} />; })()} {announcements[0].tag}
-                    </span>
-                    <span className="text-muted-foreground text-sm">{formatAnnouncementDate(announcements[0].date)}</span>
-                  </div>
-                  <div className="font-bold text-foreground mb-2 text-lg" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-                    {announcements[0].title}
-                  </div>
-                  <p className="text-muted-foreground text-base leading-relaxed">{announcements[0].body}</p>
-                </div>
-                <button
-                  onClick={() => scrollTo("info")}
-                  className="text-blue-200 text-base font-semibold hover:text-white flex items-center gap-1.5"
-                >
-                  See all announcements <ArrowRight size={16} />
-                </button>
+          <div className="hidden lg:flex flex-col items-center justify-center py-8" aria-hidden>
+            {/* Rings, glow and seal share one square box so they stay concentric. */}
+            <div className="relative flex h-[36rem] w-[36rem] items-center justify-center">
+              <div className="seal-ring absolute inset-0 rounded-full border border-dashed border-white/15" />
+              <div className="seal-ring reverse absolute inset-[3rem] rounded-full border border-[#d4a017]/25">
+                <span className="absolute -top-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-[#d4a017] shadow-[0_0_14px_#d4a017]" />
+                <span className="absolute -bottom-1 left-1/4 h-2 w-2 rounded-full bg-white/70" />
               </div>
+              <div className="absolute inset-[5rem] rounded-full" style={{ background: "radial-gradient(circle, rgba(212,160,23,0.35) 0%, rgba(212,160,23,0) 70%)" }} />
+              <div className="seal-float relative" style={{ perspective: "1200px" }}>
+                <div className="seal-flip h-96 w-96">
+                  <img src="/seals/barangay-campagao.jpg" alt="" className="seal-face h-full w-full object-cover ring-8 ring-white/15 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.6)]" />
+                  <img src="/seals/municipality-bilar.jpg" alt="" className="seal-face back h-full w-full object-cover ring-8 ring-white/15 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.6)]" />
+                </div>
+              </div>
+              <div className="seal-shadow absolute bottom-6 h-6 w-64 rounded-full bg-black/60 blur-md" />
             </div>
-          )}
+            <div className="mt-2 text-center">
+              <div className="text-2xl font-extrabold tracking-wide text-white" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Barangay Campagao</div>
+              <div className="mt-1 text-sm font-semibold uppercase tracking-[0.2em] text-[#f3d27a]">Municipality of Bilar · Bohol</div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -241,42 +236,15 @@ export function LandingPage({
               <FileText size={18} /> Our Services
             </div>
             <h2 className="text-4xl sm:text-5xl font-extrabold text-foreground mb-4" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-              Clearances & Certificates
+              Official Clearances & Certificates
             </h2>
             <p className="text-muted-foreground text-lg">
-              Apply online for the documents you need. Track your request status from submission to release.
+              Here's exactly what you'll receive — the same certificate format the Barangay Hall issues, with the fee and
+              requirements for each. Apply online and track it from submission to release.
             </p>
           </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {(docTypes.length ? docTypes : FALLBACK_DOC_TYPES).map((doc) => {
-              const Icon = getDocIcon(doc.name);
-              return (
-                <div
-                  key={doc.name}
-                  className="bg-card rounded-2xl border border-border p-8 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
-                >
-                  <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-5">
-                    <Icon size={30} className="text-primary" />
-                  </div>
-                  <h3 className="font-bold text-foreground mb-2 text-lg" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-                    {doc.name}
-                  </h3>
-                  <div className="text-base font-semibold text-[#d4a017] mb-4">
-                    {doc.fee > 0 ? `₱${doc.fee}.00 fee` : "Free of charge"}
-                  </div>
-                  <ul className="space-y-2">
-                    {doc.requirements.slice(0, 3).map((req) => (
-                      <li key={req.requirement} className="flex items-start gap-2 text-sm text-muted-foreground leading-snug">
-                        <CheckCircle2 size={17} className="text-emerald-600 shrink-0 mt-0.5" />
-                        {req.requirement}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            })}
-          </div>
+          <CertificateShowcase docTypes={docTypes.length ? docTypes : FALLBACK_DOC_TYPES} onRequest={onSignIn} />
 
           <div className="text-center mt-14">
             <button
@@ -309,21 +277,32 @@ export function LandingPage({
             {announcements.map((item) => {
               const { icon: Icon, tagColor } = ANNOUNCEMENT_STYLE[item.tag];
               return (
-                <div key={item.id} className="bg-card rounded-2xl border border-border p-7 flex gap-5 hover:shadow-md transition-shadow">
-                  <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
-                    <Icon size={28} className="text-primary" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2.5 mb-2 flex-wrap">
+                <article key={item.id} className="group flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-[#1a3a6b]/10">
+                  {item.image ? (
+                    <div className="relative h-60 overflow-hidden">
+                      <img src={api.fileUrl(item.image)} alt={item.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-transparent" />
+                      <span className={`absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold shadow ${tagColor}`}>
+                        <Icon size={14} /> {item.tag}
+                      </span>
+                      <span className="absolute bottom-3 left-4 text-sm font-semibold text-white drop-shadow">{formatAnnouncementDate(item.date)}</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 px-7 pt-7">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
+                        <Icon size={24} className="text-primary" />
+                      </div>
                       <span className={`text-sm font-bold px-3 py-1 rounded-full ${tagColor}`}>{item.tag}</span>
                       <span className="text-muted-foreground text-sm">{formatAnnouncementDate(item.date)}</span>
                     </div>
-                    <h3 className="font-bold text-foreground mb-1.5 text-lg" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                  )}
+                  <div className="p-7 pt-5">
+                    <h3 className="font-bold text-foreground mb-1.5 text-xl" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                       {item.title}
                     </h3>
-                    <p className="text-muted-foreground text-sm leading-relaxed">{item.body}</p>
+                    <p className="text-muted-foreground text-base leading-relaxed">{item.body}</p>
                   </div>
-                </div>
+                </article>
               );
             })}
           </div>

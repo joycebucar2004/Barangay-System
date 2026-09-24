@@ -35,6 +35,7 @@ export function Sidebar({
     { id: "verified", label: "For Verification", icon: <Eye size={19} /> },
     { id: "release", label: "Payment & Release", icon: <Banknote size={19} /> },
     { id: "residents", label: "Residents", icon: <Users size={19} /> },
+    { id: "reports", label: "Reports", icon: <BarChart2 size={19} /> },
     { id: "notifications", label: "Notifications", icon: <Bell size={19} />, badge: notifCount },
     { id: "settings", label: "Settings", icon: <Settings size={19} /> },
   ];
@@ -56,7 +57,7 @@ export function Sidebar({
     <aside className="w-60 flex-shrink-0 flex flex-col h-screen sticky top-0" style={{ background: "linear-gradient(180deg, #1a3a6b 0%, #0d2244 100%)", fontFamily: "'DM Sans', sans-serif" }}>
       <div className="p-5 border-b border-white/10">
         <div className="flex items-center gap-3 mb-1">
-          <div className="w-14 h-14 rounded-lg bg-white/10 flex items-center justify-center border border-white/20">
+          <div className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center border border-white/20 shadow-[0_0_24px_rgba(212,160,23,0.25)]">
             <BarangayLogo size={48} className="text-white" />
           </div>
           <div>
@@ -71,10 +72,10 @@ export function Sidebar({
           <button
             key={id}
             onClick={() => setActiveSection(id)}
-            className={`w-full flex items-center justify-between gap-2.5 px-3 py-2.5 rounded-lg text-base transition-all duration-150 text-left ${
+            className={`relative w-full flex items-center justify-between gap-2.5 px-3 py-2.5 rounded-lg text-base transition-all duration-150 text-left ${
               activeSection === id
-                ? "bg-white/15 text-white font-semibold"
-                : "text-blue-200 hover:bg-white/8 hover:text-white"
+                ? "bg-gradient-to-r from-white/20 to-white/5 text-white font-semibold shadow-sm before:absolute before:left-0 before:top-2 before:bottom-2 before:w-1 before:rounded-r-full before:bg-[#d4a017]"
+                : "text-blue-200 hover:bg-white/10 hover:text-white hover:translate-x-0.5"
             }`}
           >
             <span className="flex items-center gap-2.5">

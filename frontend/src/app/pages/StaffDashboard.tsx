@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { Calendar, Clock, Eye, CheckCircle, Search, Plus, ClipboardList, ShieldCheck, Package, ScrollText, Info, Banknote } from "lucide-react";
+import { Calendar, Clock, Eye, CheckCircle, Search, Plus, ClipboardList, ShieldCheck, Package, ScrollText, Info, Banknote, UserPlus, Users } from "lucide-react";
+import { DashboardHero } from "../components/DashboardHero";
+import { PageHeader } from "../components/PageHeader";
+import { ReportsView } from "../components/ReportsView";
 import { StatCard } from "../components/StatCard";
 import { RequestRow } from "../components/RequestRow";
 import { RequestDetailModal } from "../components/RequestDetailModal";
 import { AddUserModal } from "../components/AddUserModal";
 import { NotificationsPanel } from "../components/NotificationsPanel";
 import { WalkInRequestForm } from "../components/WalkInRequestForm";
-import type { ApiDocumentType, ApiNotification, ApiRequest, ApiUser, Role, RequestStatus, UserProfileInput } from "../lib/api";
+import type { ReportsSummary, ApiDocumentType, ApiNotification, ApiRequest, ApiUser, Role, RequestStatus, UserProfileInput } from "../lib/api";
 
 const TABLE_HEADERS = ["Request ID", "Name", "Document / Purpose", "Status", "Payment", "Submitted", "Action"];
 
@@ -18,10 +21,12 @@ const STAFF_STATUS_STYLE: Record<string, string> = {
 
 export function StaffDashboard({
   section,
+  setSection,
   requests,
   notifications,
   docTypes,
   users,
+  reports,
   onStatusChange,
   onMarkPaid,
   onPrintCertificate,
@@ -33,10 +38,12 @@ export function StaffDashboard({
   onCreateWalkInRequest,
 }: {
   section: string;
+  setSection: (s: string) => void;
   requests: ApiRequest[];
   notifications: ApiNotification[];
   docTypes: ApiDocumentType[];
   users: ApiUser[];
+  reports: ReportsSummary | null;
   onStatusChange: (id: string, s: RequestStatus, remarks?: string) => void;
   onMarkPaid: (id: string) => void;
   onPrintCertificate: (id: string) => Promise<ApiRequest | null>;
@@ -87,29 +94,24 @@ export function StaffDashboard({
 
       {section === "walk-in" && (
         <>
-          <div>
-            <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Walk-in Request</h2>
-            <p className="text-muted-foreground text-base">For someone at the counter who doesn't have an online account. The request joins the normal queue.</p>
+          <PageHeader icon={<UserPlus size={22} />} title="Walk-in Request" subtitle="For someone at the counter who doesn't have an online account. The request joins the normal queue." />
+          <div className="ui-card p-8">
+            <WalkInRequestForm docTypes={docTypes} residents={residents} onSubmit={onCreateWalkInRequest} />
           </div>
-          <WalkInRequestForm docTypes={docTypes} residents={residents} onSubmit={onCreateWalkInRequest} />
         </>
       )}
 
       {section === "residents" && (
         <>
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Residents</h2>
-              <p className="text-muted-foreground text-base">Add resident accounts — new accounts need admin approval before they can sign in.</p>
-            </div>
+          <PageHeader icon={<Users size={22} />} title="Residents" subtitle="Add resident accounts — new accounts need admin approval before they can sign in.">
             <button onClick={() => setShowAddUser(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-base font-semibold hover:bg-primary/90 transition-colors">
               <Plus size={16} /> Add User
             </button>
-          </div>
-          <div className="bg-card rounded-xl border border-border shadow-sm overflow-x-auto">
+          </PageHeader>
+          <div className="ui-table-card">
             <table className="w-full min-w-[700px]">
               <thead>
-                <tr className="border-b border-border bg-[#f0f3f8]">
+                <tr className="ui-thead">
                   {["Name", "Email", "Contact No.", "Date Joined", "Status"].map((h) => (
                     <th key={h} className="px-5 py-3.5 text-left text-sm font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>
                   ))}
@@ -117,7 +119,7 @@ export function StaffDashboard({
               </thead>
               <tbody>
                 {residents.map((u) => (
-                  <tr key={u.id} className="border-b border-border hover:bg-[#f0f3f8]/70 transition-colors">
+                  <tr key={u.id} className="border-b border-border">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-base">{u.name[0]}</div>
@@ -137,7 +139,7 @@ export function StaffDashboard({
                   </tr>
                 ))}
                 {residents.length === 0 && (
-                  <tr><td colSpan={5} className="px-4 py-12 text-center text-muted-foreground text-base">No resident accounts found.</td></tr>
+                  <tr><td colSpan={5} className="ui-empty text-base">No resident accounts found.</td></tr>
                 )}
               </tbody>
             </table>
@@ -147,10 +149,15 @@ export function StaffDashboard({
 
       {section === "dashboard" && (
         <>
-          <div>
-            <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Staff Dashboard</h2>
-            <p className="text-muted-foreground text-base">Barangay Campagao — {new Date().toLocaleDateString("en-PH", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
-          </div>
+          <DashboardHero
+            eyebrow="Staff Portal"
+            title="Staff Dashboard"
+            subtitle={pending.length > 0 ? `${pending.length} request${pending.length === 1 ? "" : "s"} waiting for your review today.` : "All caught up — no requests waiting for review."}
+            actions={[
+              { label: "Walk-in Request", icon: <UserPlus size={16} />, onClick: () => setSection("walk-in"), primary: true },
+              { label: "Request Queue", icon: <ClipboardList size={16} />, onClick: () => setSection("queue") },
+            ]}
+          />
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <StatCard label="New Today" value={newToday.length} icon={<Calendar size={20} className="text-primary" />} color="bg-primary/10" />
             <StatCard label="Pending Review" value={pending.length} icon={<Clock size={20} className="text-amber-600" />} color="bg-amber-50" />
@@ -159,7 +166,7 @@ export function StaffDashboard({
             <StatCard label="Released Total" value={requests.filter((r) => r.status === "Released").length} icon={<CheckCircle size={20} className="text-green-600" />} color="bg-green-50" />
           </div>
 
-          <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
+          <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
               <Info size={18} className="text-primary" />
               <h3 className="text-lg font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>How Requests &amp; Certificates Work</h3>
@@ -184,17 +191,17 @@ export function StaffDashboard({
             <div className="flex items-start gap-2.5 bg-[#f0f3f8] border border-border rounded-lg px-3.5 py-3">
               <ScrollText size={16} className="text-primary flex-shrink-0 mt-0.5" />
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Once a request is <span className="font-semibold text-foreground">Verified</span>, open it and use <span className="font-semibold text-foreground">Soft Copy Preview</span> to check the auto-filled certificate — name, address, purpose and civil status are pulled straight from the resident's request. If anything autofilled looks wrong, click directly into the text to fix it before you approve it. After you approve and print the official copy, collect payment, then mark the request <span className="font-semibold text-foreground">Ready for Pickup</span> and, once claimed, <span className="font-semibold text-foreground">Released</span>. Admin can view the certificate and its status, but the approval and printing are yours to handle.
+                Once a request is <span className="font-semibold text-foreground">Verified</span>, open it and use <span className="font-semibold text-foreground">Soft Copy (PDF)</span> to check the certificate — name, address, purpose and civil status are filled in from the resident's request. The wording itself comes from the admin's certificate template for that document type. After you approve and print the official copy, collect payment, then mark the request <span className="font-semibold text-foreground">Ready for Pickup</span> and, once claimed, <span className="font-semibold text-foreground">Released</span>.
               </p>
             </div>
           </div>
 
           <div>
             <h3 className="text-lg font-bold text-foreground mb-3" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Pending Applications</h3>
-            <div className="bg-card rounded-xl border border-border overflow-x-auto shadow-sm">
+            <div className="ui-table-card">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-border bg-[#f0f3f8]">
+                  <tr className="ui-thead">
                     {TABLE_HEADERS.map((h) => (
                       <th key={h} className="px-5 py-3.5 text-left text-sm font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>
                     ))}
@@ -205,7 +212,7 @@ export function StaffDashboard({
                     <RequestRow key={r.id} req={r} onView={setSelectedRequest} showActions role="staff" onStatusChange={onStatusChange} onMarkPaid={onMarkPaid} onPrintCertificate={onPrintCertificate} />
                   ))}
                   {pending.length === 0 && (
-                    <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground text-base">No pending applications.</td></tr>
+                    <tr><td colSpan={7} className="ui-empty text-base">No pending applications.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -216,15 +223,11 @@ export function StaffDashboard({
 
       {(section === "queue" || section === "verified" || section === "release") && (
         <>
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-                {section === "queue" ? "Request Queue" : section === "verified" ? "For Verification" : "Payment & Release"}
-              </h2>
-              <p className="text-muted-foreground text-base">
-                {section === "release" ? "Approved requests, printed by the admin, waiting on payment and pickup." : `${filtered.length} requests found`}
-              </p>
-            </div>
+          <PageHeader
+            icon={section === "queue" ? <ClipboardList size={22} /> : section === "verified" ? <Eye size={22} /> : <Banknote size={22} />}
+            title={section === "queue" ? "Request Queue" : section === "verified" ? "For Verification" : "Payment & Release"}
+            subtitle={section === "release" ? "Approved requests waiting on printing, payment and pickup." : `${filtered.length} request${filtered.length === 1 ? "" : "s"} found`}
+          >
             <div className="relative">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -232,14 +235,14 @@ export function StaffDashboard({
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search by name or ID..."
-                className="pl-8 pr-3 py-2 rounded-lg border border-border bg-card text-base focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary w-60 transition-all"
+                className="pl-9 pr-3 py-2.5 rounded-xl border border-border bg-[#f7f9fc] text-base focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white w-60 transition-all"
               />
             </div>
-          </div>
-          <div className="bg-card rounded-xl border border-border overflow-x-auto shadow-sm">
+          </PageHeader>
+          <div className="ui-table-card">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-border bg-[#f0f3f8]">
+                <tr className="ui-thead">
                   {TABLE_HEADERS.map((h) => (
                     <th key={h} className="px-5 py-3.5 text-left text-sm font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>
                   ))}
@@ -250,12 +253,18 @@ export function StaffDashboard({
                   <RequestRow key={r.id} req={r} onView={setSelectedRequest} showActions role="staff" onStatusChange={onStatusChange} onMarkPaid={onMarkPaid} onPrintCertificate={onPrintCertificate} />
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground text-base">No requests found.</td></tr>
+                  <tr><td colSpan={7} className="ui-empty text-base">No requests found.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </>
+      )}
+
+      {section === "reports" && (
+        <div className="-m-8">
+          <ReportsView reports={reports} requests={requests} />
+        </div>
       )}
 
       {section === "notifications" && (

@@ -16,6 +16,7 @@ const storage = multer.diskStorage({
 });
 
 const ALLOWED = [".pdf", ".jpg", ".jpeg", ".png"];
+const IMAGE_TYPES = [".jpg", ".jpeg", ".png", ".webp"];
 
 export const upload = multer({
   storage,
@@ -26,3 +27,20 @@ export const upload = multer({
     cb(null, true);
   },
 });
+
+// Announcement photos: images only.
+export const imageUpload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!IMAGE_TYPES.includes(ext) || !file.mimetype.startsWith("image/")) return cb(new Error("Unsupported file type"));
+    cb(null, true);
+  },
+});
+
+// Only ever deletes a plain file name inside UPLOAD_DIR.
+export function removeUpload(storedName) {
+  if (!storedName || storedName !== path.basename(storedName)) return;
+  fs.promises.unlink(path.join(UPLOAD_DIR, storedName)).catch(() => {});
+}

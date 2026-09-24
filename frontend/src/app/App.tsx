@@ -10,7 +10,7 @@ import { AdminDashboard } from "./pages/AdminDashboard";
 import { ProfileSettings } from "./pages/ProfileSettings";
 import { api, getToken, setToken } from "./lib/api";
 import type {
-  AnnouncementTag,
+  AnnouncementInput,
   ApiAnnouncement,
   ApiDocumentType,
   ApiDocumentTypeRequirement,
@@ -264,13 +264,13 @@ export default function App() {
     toast.success(`${documentType.name} added.`);
   }
 
-  async function handleCreateAnnouncement(payload: { tag: AnnouncementTag; title: string; body: string; date?: string }) {
+  async function handleCreateAnnouncement(payload: AnnouncementInput) {
     const { announcement } = await api.createAnnouncement(payload);
     setAnnouncements((prev) => [announcement, ...prev]);
     toast.success("Announcement posted.");
   }
 
-  async function handleUpdateAnnouncement(id: string, payload: Partial<{ tag: AnnouncementTag; title: string; body: string; date: string }>) {
+  async function handleUpdateAnnouncement(id: string, payload: Partial<AnnouncementInput>) {
     const { announcement } = await api.updateAnnouncement(id, payload);
     setAnnouncements((prev) => prev.map((a) => (a.id === id ? announcement : a)));
     toast.success("Announcement updated.");
@@ -321,7 +321,8 @@ export default function App() {
         onLogout={handleLogout}
         notifCount={unreadNotifs}
       />
-      <main className="flex-1 overflow-y-auto min-h-screen">
+      <main className="ui-app-bg flex-1 overflow-y-auto min-h-screen">
+        <div key={activeSection} className="ui-page">
         {activeSection === "settings" && user.role !== "admin" && (
           <ProfileSettings
             currentUser={user}
@@ -351,10 +352,12 @@ export default function App() {
         {activeSection !== "settings" && user.role === "staff" && (
           <StaffDashboard
             section={activeSection}
+            setSection={setActiveSection}
             requests={requests}
             notifications={notifications}
             docTypes={docTypes}
             users={users}
+            reports={reports}
             onStatusChange={handleStatusChange}
             onMarkPaid={handleMarkPaid}
             onPrintCertificate={handlePrintCertificate}
@@ -369,6 +372,7 @@ export default function App() {
         {user.role === "admin" && (
           <AdminDashboard
             section={activeSection}
+            setSection={setActiveSection}
             requests={requests}
             docTypes={docTypes}
             users={users}
@@ -391,6 +395,7 @@ export default function App() {
             onDeleteAllNotifications={handleDeleteAllNotifications}
           />
         )}
+        </div>
       </main>
     </div>
   );

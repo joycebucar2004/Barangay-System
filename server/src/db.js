@@ -24,6 +24,12 @@ export async function ensureWalkInSchema() {
   if (!(await columnExists("requests", "requirements_presented"))) {
     await pool.query("ALTER TABLE requests ADD COLUMN requirements_presented TEXT DEFAULT NULL");
   }
+  if (!(await columnExists("announcements", "image"))) {
+    await pool.query("ALTER TABLE announcements ADD COLUMN image VARCHAR(255) DEFAULT NULL");
+  }
+  if (!(await columnExists("requests", "paid_at"))) {
+    await pool.query("ALTER TABLE requests ADD COLUMN paid_at DATETIME DEFAULT NULL");
+  }
   if (!(await columnExists("document_types", "certificate_template"))) {
     await pool.query("ALTER TABLE document_types ADD COLUMN certificate_template MEDIUMTEXT DEFAULT NULL");
   }
@@ -155,7 +161,7 @@ function mapNotification(row) {
 
 function mapAnnouncement(row) {
   if (!row) return null;
-  return { id: row.id, tag: row.tag, title: row.title, body: row.body, date: row.date };
+  return { id: row.id, tag: row.tag, title: row.title, body: row.body, date: row.date, image: row.image || null };
 }
 
 async function nextId(counterName, prefix, pad = 0) {
@@ -402,7 +408,7 @@ export async function updateRequestStatus(id, { status, remarks, paid }) {
 }
 
 export async function markRequestPaid(id) {
-  await pool.query("UPDATE requests SET paid = 1 WHERE id = ?", [id]);
+  await pool.query("UPDATE requests SET paid = 1, paid_at = NOW() WHERE id = ?", [id]);
   return getRequestById(id);
 }
 
@@ -488,14 +494,14 @@ export async function getAnnouncementById(id) {
   return mapAnnouncement(rows[0]);
 }
 
-export async function createAnnouncement({ tag, title, body, date }) {
+export async function createAnnouncement({ tag, title, body, date, image }) {
   const id = await nextId("announcement", "a");
-  await pool.query("INSERT INTO announcements (id, tag, title, body, date) VALUES (?,?,?,?,?)", [id, tag, title, body, date]);
+  await pool.query("INSERT INTO announcements (id, tag, title, body, date, image) VALUES (?,?,?,?,?,?)", [id, tag, title, body, date, image || null]);
   return getAnnouncementById(id);
 }
 
 export async function updateAnnouncement(id, fields) {
-  const columns = { tag: "tag", title: "title", body: "body", date: "date" };
+  const columns = { tag: "tag", title: "title", body: "body", date: "date", image: "image" };
   const sets = [];
   const values = [];
   for (const [key, col] of Object.entries(columns)) {
@@ -530,7 +536,12 @@ export async function reportMonthlyRequests() {
   }
   const [rows] = await pool.query("SELECT DATE_FORMAT(submitted_at, '%Y-%m') AS ym, COUNT(*) AS c FROM requests GROUP BY ym");
   const counts = Object.fromEntries(rows.map((r) => [r.ym, r.c]));
-  return months.map((m) => ({ month: m.label, requests: counts[m.key] || 0 }));
+  // Payments are dated by when they were marked paid (paid_at); older rows fall back to updated_at.
+  const [revRows] = await pool.query(
+    `SELECT DATE_FORMAT(COALESCE(paid_at, updated_at), '%Y-%m') AS ym, SUM(fee) AS total FROM requests WHERE paid = 1 AND fee > 0 GROUP BY ym`
+  );
+  const revenue = Object.fromEntries(revRows.map((r) => [r.ym, Number(r.total)]));
+  return months.map((m) => ({ month: m.label, requests: counts[m.key] || 0, revenue: revenue[m.key] || 0 }));
 }
 
 export async function reportDocumentDistribution() {
@@ -552,9 +563,24 @@ export async function reportRevenueSummary() {
     SELECT
       (SELECT COUNT(*) FROM requests WHERE YEAR(submitted_at) = YEAR(CURDATE()) AND MONTH(submitted_at) = MONTH(CURDATE())) AS totalThisMonth,
       (SELECT COUNT(*) FROM requests WHERE status = 'Released' AND YEAR(submitted_at) = YEAR(CURDATE()) AND MONTH(submitted_at) = MONTH(CURDATE())) AS releasedThisMonth,
-      (SELECT IFNULL(SUM(fee), 0) FROM requests WHERE paid = 1) AS revenue
+      (SELECT IFNULL(SUM(fee), 0) FROM requests WHERE paid = 1) AS revenue,
+      (SELECT IFNULL(SUM(fee), 0) FROM requests WHERE paid = 1 AND fee > 0
+         AND YEAR(COALESCE(paid_at, updated_at)) = YEAR(CURDATE()) AND MONTH(COALESCE(paid_at, updated_at)) = MONTH(CURDATE())) AS revenueThisMonth,
+      (SELECT IFNULL(SUM(fee), 0) FROM requests WHERE paid = 0 AND fee > 0 AND status NOT IN ('Rejected', 'Cancelled')) AS outstanding,
+      (SELECT COUNT(*) FROM requests WHERE paid = 0 AND fee > 0 AND status NOT IN ('Rejected', 'Cancelled')) AS outstandingCount
   `);
-  return { totalThisMonth: row.totalThisMonth, releasedThisMonth: row.releasedThisMonth, revenue: Number(row.revenue) };
+  const [byDoc] = await pool.query(
+    "SELECT doc_type AS name, SUM(fee) AS total, COUNT(*) AS count FROM requests WHERE paid = 1 AND fee > 0 GROUP BY doc_type ORDER BY total DESC"
+  );
+  return {
+    totalThisMonth: row.totalThisMonth,
+    releasedThisMonth: row.releasedThisMonth,
+    revenue: Number(row.revenue),
+    revenueThisMonth: Number(row.revenueThisMonth),
+    outstanding: Number(row.outstanding),
+    outstandingCount: Number(row.outstandingCount),
+    revenueByDocType: byDoc.map((d) => ({ name: d.name, total: Number(d.total), count: Number(d.count) })),
+  };
 }
 
 export async function reportSourceSummary() {

@@ -122,13 +122,37 @@ export interface ApiAnnouncement {
   title: string;
   body: string;
   date: string;
+  image?: string | null; // stored upload name; build the URL with api.fileUrl()
+}
+
+export interface AnnouncementInput {
+  tag: AnnouncementTag;
+  title: string;
+  body: string;
+  date?: string;
+  image?: File | null;
+  removeImage?: boolean;
+}
+
+function announcementFormData(payload: Partial<AnnouncementInput>) {
+  const form = new FormData();
+  for (const key of ["tag", "title", "body", "date"] as const) {
+    if (payload[key] !== undefined) form.append(key, payload[key] as string);
+  }
+  if (payload.image) form.append("image", payload.image);
+  if (payload.removeImage) form.append("removeImage", "true");
+  return form;
 }
 
 export interface ReportsSummary {
   totalThisMonth: number;
   releasedThisMonth: number;
   revenue: number;
-  monthly: { month: string; requests: number }[];
+  revenueThisMonth?: number;
+  outstanding?: number; // unpaid fees on active (not rejected/cancelled) requests
+  outstandingCount?: number;
+  revenueByDocType?: { name: string; total: number; count: number }[];
+  monthly: { month: string; requests: number; revenue?: number }[];
   distribution: { name: string; value: number; color: string }[];
   statusCounts: Record<string, number>;
   sources?: {
@@ -278,11 +302,11 @@ export const api = {
   async listAnnouncements() {
     return request<{ announcements: ApiAnnouncement[] }>("/announcements");
   },
-  async createAnnouncement(payload: { tag: AnnouncementTag; title: string; body: string; date?: string }) {
-    return request<{ announcement: ApiAnnouncement }>("/announcements", { method: "POST", body: JSON.stringify(payload) });
+  async createAnnouncement(payload: AnnouncementInput) {
+    return request<{ announcement: ApiAnnouncement }>("/announcements", { method: "POST", body: announcementFormData(payload) });
   },
-  async updateAnnouncement(id: string, payload: Partial<{ tag: AnnouncementTag; title: string; body: string; date: string }>) {
-    return request<{ announcement: ApiAnnouncement }>(`/announcements/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  async updateAnnouncement(id: string, payload: Partial<AnnouncementInput>) {
+    return request<{ announcement: ApiAnnouncement }>(`/announcements/${id}`, { method: "PUT", body: announcementFormData(payload) });
   },
   async deleteAnnouncement(id: string) {
     return request<{ ok: boolean }>(`/announcements/${id}`, { method: "DELETE" });

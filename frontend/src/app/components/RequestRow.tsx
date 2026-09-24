@@ -43,7 +43,7 @@ export function RequestRow({ req, onView, showActions, role, onStatusChange, onM
   }
 
   return (
-    <tr className="border-b border-border hover:bg-[#f0f3f8]/70 transition-colors">
+    <tr className="border-b border-border">
       <td className="px-5 py-3.5">
         <span className="text-sm font-mono text-primary font-semibold">{req.id}</span>
         {req.source === "Walk-in" && (

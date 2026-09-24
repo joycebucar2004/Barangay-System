@@ -13,7 +13,7 @@ export function StatusBadge({ status }: { status: RequestStatus }) {
   };
   const { color, icon } = config[status];
   return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold ${color}`} style={{ fontFamily: "'DM Mono', monospace" }}>
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold whitespace-nowrap shadow-sm ${color}`}>
       {icon} {status}
     </span>
   );

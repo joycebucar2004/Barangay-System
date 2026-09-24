@@ -179,3 +179,75 @@
     line-height: 1.5;
   }
 }
+
+/* ---------- App-wide polish (unlayered so it sits above Tailwind utilities) ---------- */
+
+.ui-app-bg {
+  background:
+    radial-gradient(1200px 500px at 100% -10%, rgba(212, 160, 23, 0.07), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(26, 58, 107, 0.07), transparent 60%),
+    #f0f3f8;
+}
+
+/* Opacity only: a transform here would become the containing block for fixed-position modals. */
+.ui-page { animation: ui-fade-in 0.25s ease-out; }
+@keyframes ui-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.ui-modal { animation: ui-pop 0.2s ease-out both; }
+@keyframes ui-pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+.ui-table-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow: 0 1px 2px rgba(15, 28, 46, 0.04), 0 8px 24px -12px rgba(26, 58, 107, 0.12);
+  overflow-x: auto;
+}
+.ui-thead { background: linear-gradient(180deg, #f6f8fc 0%, #edf1f8 100%); border-bottom: 1px solid var(--border); }
+.ui-thead th { color: #3d5178 !important; font-size: 0.75rem !important; letter-spacing: 0.08em; }
+.ui-table-card tbody tr { transition: background-color 0.15s ease; }
+.ui-table-card tbody tr:hover { background: #f5f8fd; }
+.ui-table-card tbody tr:last-child { border-bottom: 0; }
+.ui-table-card th, .ui-table-card td { white-space: nowrap; }
+
+.ui-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow: 0 1px 2px rgba(15, 28, 46, 0.04), 0 8px 24px -14px rgba(26, 58, 107, 0.14);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.ui-card-hover:hover { box-shadow: 0 2px 4px rgba(15, 28, 46, 0.05), 0 14px 32px -14px rgba(26, 58, 107, 0.22); transform: translateY(-2px); }
+
+button.bg-primary:not(:disabled) {
+  background-image: linear-gradient(135deg, #24508f 0%, #1a3a6b 55%, #13305a 100%);
+  box-shadow: 0 6px 16px -8px rgba(26, 58, 107, 0.6);
+}
+button.bg-primary:not(:disabled):hover { filter: brightness(1.08); }
+button.bg-primary:not(:disabled):active { transform: translateY(1px); }
+
+.ui-empty { padding: 3rem 1rem; text-align: center; color: var(--muted-foreground); }
+
+/* ---------- Landing: floating, flipping seal ---------- */
+.seal-float { animation: seal-float 6s ease-in-out infinite; }
+@keyframes seal-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-18px); } }
+
+.seal-flip { position: relative; transform-style: preserve-3d; animation: seal-flip 9s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+@keyframes seal-flip {
+  0%, 38% { transform: rotateY(0deg); }
+  50%, 88% { transform: rotateY(180deg); }
+  100% { transform: rotateY(360deg); }
+}
+.seal-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 9999px; }
+.seal-face.back { transform: rotateY(180deg); }
+
+.seal-ring { animation: seal-spin 40s linear infinite; }
+.seal-ring.reverse { animation-duration: 60s; animation-direction: reverse; }
+@keyframes seal-spin { to { transform: rotate(360deg); } }
+
+.seal-shadow { animation: seal-shadow 6s ease-in-out infinite; }
+@keyframes seal-shadow { 0%, 100% { transform: scaleX(1); opacity: 0.45; } 50% { transform: scaleX(0.78); opacity: 0.25; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .seal-float, .seal-flip, .seal-ring, .seal-shadow { animation: none; }
+}

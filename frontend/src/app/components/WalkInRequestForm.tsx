@@ -137,7 +137,7 @@ export function WalkInRequestForm({ docTypes, residents, onSubmit }: {
   }
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-2xl mx-auto">
       <div className="flex items-center gap-2 mb-8">
         {STEPS.map((label, i) => {
           const s = i + 1;
@@ -173,7 +173,7 @@ export function WalkInRequestForm({ docTypes, residents, onSubmit }: {
           </div>
 
           {mode === "new" ? (
-            <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+            <div className="ui-card p-5 space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-semibold text-foreground mb-1.5">Last Name *</label>
@@ -224,7 +224,7 @@ export function WalkInRequestForm({ docTypes, residents, onSubmit }: {
               </p>
             </div>
           ) : (
-            <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+            <div className="ui-card p-5 space-y-3">
               {selectedResident ? (
                 <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-3.5 py-3">
                   <div>
@@ -353,7 +353,7 @@ export function WalkInRequestForm({ docTypes, residents, onSubmit }: {
         <div className="space-y-4">
           <h3 className="text-lg font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Review & Save</h3>
           {error && <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>}
-          <div className="bg-card border border-border rounded-xl p-5 space-y-3 text-sm">
+          <div className="ui-card p-5 space-y-3 text-sm">
             {[
               ["Requester", `${requesterName}${mode === "existing" && selectedResident ? ` (${selectedResident.id})` : " — new walk-in record"}`],
               ["Document Type", selectedDoc],

@@ -2,10 +2,12 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { PasswordInput } from "../components/PasswordInput";
+import { PageHeader } from "../components/PageHeader";
+import { Settings } from "lucide-react";
 import type { ApiUser, CivilStatus, Gender } from "../lib/api";
 
 const inputClass = "w-full px-3.5 py-2.5 rounded-lg border border-border bg-[#f0f3f8] text-foreground placeholder:text-muted-foreground text-base focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all";
-const cardClass = "bg-card border border-border rounded-xl p-6 max-w-xl";
+const cardClass = "ui-card p-6 h-fit";
 
 export function ProfileSettings({ currentUser, onProfileUpdated, knownPassword, onPasswordChanged }: {
   currentUser: ApiUser;
@@ -77,11 +79,9 @@ export function ProfileSettings({ currentUser, onProfileUpdated, knownPassword, 
 
   return (
     <div className="p-8 space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Account Settings</h2>
-        <p className="text-base text-muted-foreground">Manage your profile information and password.</p>
-      </div>
+      <PageHeader icon={<Settings size={22} />} title="Account Settings" subtitle="Manage your profile information and password." />
 
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 items-start">
       <div className={cardClass}>
         <h3 className="text-lg font-bold text-foreground mb-4">Profile Information</h3>
         {profileError && (
@@ -219,6 +219,7 @@ export function ProfileSettings({ currentUser, onProfileUpdated, knownPassword, 
             {savingPassword ? "Saving..." : "Change Password"}
           </button>
         </form>
+      </div>
       </div>
     </div>
   );

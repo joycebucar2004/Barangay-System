@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Shield, User, Briefcase, Star, ArrowLeft } from "lucide-react";
+import { Shield, User, Briefcase, Star, ArrowLeft, FileCheck2, BellRing, Clock3 } from "lucide-react";
 import { BarangayLogo } from "./BarangayLogo";
 import { PasswordInput } from "./PasswordInput";
 import { api } from "../lib/api";
@@ -102,8 +102,10 @@ export function LoginScreen({
 
   return (
     <div className="min-h-screen flex" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      <div className="hidden lg:flex lg:w-[55%] flex-col justify-between p-12" style={{ background: "linear-gradient(145deg, #1a3a6b 0%, #0d2244 100%)" }}>
-        <div className="flex items-center justify-between">
+      <div className="relative hidden lg:flex lg:w-[55%] flex-col justify-between overflow-hidden p-12" style={{ background: "linear-gradient(145deg, #1a3a6b 0%, #0d2244 100%)" }}>
+        <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full" style={{ background: "radial-gradient(circle, rgba(212,160,23,0.28) 0%, rgba(212,160,23,0) 70%)" }} />
+        <img src="/seals/barangay-campagao.jpg" alt="" aria-hidden className="pointer-events-none absolute -bottom-24 -right-24 h-[28rem] w-[28rem] rounded-full object-cover opacity-[0.07] mix-blend-luminosity" />
+        <div className="relative flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-16 h-16 rounded-xl bg-white/10 flex items-center justify-center border border-white/20">
               <BarangayLogo size={56} className="text-white" />
@@ -123,8 +125,9 @@ export function LoginScreen({
           )}
         </div>
 
-        <div className="space-y-8">
+        <div className="relative space-y-8">
           <div>
+            <div className="mb-5 h-1 w-16 rounded-full bg-[#d4a017]" />
             <h1 className="text-white text-5xl font-extrabold leading-tight mb-4" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
               Fast. Transparent.<br />At Your Service.
             </h1>
@@ -132,9 +135,24 @@ export function LoginScreen({
               Submit and track your barangay document requests online. No more long queues — complete your transactions from anywhere.
             </p>
           </div>
+          <div className="grid max-w-lg gap-3">
+            {[
+              { icon: <FileCheck2 size={18} />, title: "Request online", desc: "Clearances and certificates in a few clicks" },
+              { icon: <Clock3 size={18} />, title: "Track every step", desc: "From review to ready for pickup" },
+              { icon: <BellRing size={18} />, title: "Get notified", desc: "Know the moment your document is ready" },
+            ].map((f) => (
+              <div key={f.title} className="flex items-center gap-3.5 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3 backdrop-blur-sm">
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-[#d4a017]/20 text-[#f3d27a]">{f.icon}</div>
+                <div>
+                  <div className="text-sm font-semibold text-white">{f.title}</div>
+                  <div className="text-sm text-blue-200/90">{f.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 text-blue-300 text-sm">
+        <div className="relative flex items-center gap-2 text-blue-300 text-sm">
           <Star size={14} className="fill-blue-300" />
           <span>Serving the residents of Barangay Campagao since 1972</span>
         </div>

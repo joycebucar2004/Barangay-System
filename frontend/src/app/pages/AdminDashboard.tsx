@@ -4,28 +4,22 @@ import {
   Shield,
   CheckCircle,
   DollarSign,
-  TrendingUp,
-  Download,
   Plus,
   Search,
   Filter,
   ChevronRight,
   Trash2,
   Eye,
+  FileText,
+  BarChart2,
+  Users,
+  Megaphone,
 } from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-} from "recharts";
+import { DashboardHero } from "../components/DashboardHero";
+import { PageHeader } from "../components/PageHeader";
+import { ReportsView } from "../components/ReportsView";
+import { ImagePicker } from "../components/ImagePicker";
+import { api } from "../lib/api";
 import { StatCard } from "../components/StatCard";
 import { RequestRow } from "../components/RequestRow";
 import { RequestDetailModal } from "../components/RequestDetailModal";
@@ -34,25 +28,10 @@ import { AddUserModal } from "../components/AddUserModal";
 import { UserDetailModal } from "../components/UserDetailModal";
 import { NotificationsPanel } from "../components/NotificationsPanel";
 import { CertificateEditorModal } from "../components/CertificateEditorModal";
-import type { CertificateContent, AnnouncementTag, ApiAnnouncement, ApiDocumentType, ApiDocumentTypeRequirement, ApiNotification, ApiRequest, ApiUser, ReportsSummary, RequestStatus, Role, UserProfileInput, UserStatus, UserDisplayStatus } from "../lib/api";
+import type { AnnouncementInput, CertificateContent, AnnouncementTag, ApiAnnouncement, ApiDocumentType, ApiDocumentTypeRequirement, ApiNotification, ApiRequest, ApiUser, ReportsSummary, RequestStatus, Role, UserProfileInput, UserStatus, UserDisplayStatus } from "../lib/api";
 
 const TABLE_HEADERS = ["Request ID", "Name", "Document / Purpose", "Status", "Payment", "Submitted", "Action"];
 const STATUS_ORDER: RequestStatus[] = ["Pending", "Verified", "Approved", "Ready for Pickup", "Released", "Rejected", "Cancelled"];
-
-function exportRequestsCsv(requests: ApiRequest[]) {
-  const header = "ID,Resident,Document,Source,Encoded By,Status,Fee,Paid,Submitted,Updated\n";
-  const csvCell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const rows = requests
-    .map((r) => [r.id, r.residentName, r.docType, r.source || "Online", r.encodedByName || "", r.status, r.fee, r.paid, r.submittedAt, r.updatedAt].map(csvCell).join(","))
-    .join("\n");
-  const blob = new Blob([header + rows], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `barangay-requests-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 // Pending/Denied are still admin-driven decisions (editable dropdown). Once Approved, the
 // account reads as Active and is no longer editable here -- it only ever becomes Inactive
@@ -83,6 +62,7 @@ const announcementInputClass = "w-full px-3 py-2 rounded-lg border border-border
 
 export function AdminDashboard({
   section,
+  setSection,
   requests,
   docTypes,
   users,
@@ -105,6 +85,7 @@ export function AdminDashboard({
   onDeleteAllNotifications,
 }: {
   section: string;
+  setSection: (s: string) => void;
   requests: ApiRequest[];
   docTypes: ApiDocumentType[];
   users: ApiUser[];
@@ -118,8 +99,8 @@ export function AdminDashboard({
   onUpdateUserStatus: (id: string, status: UserStatus) => Promise<void>;
   onUpdateDocumentType: (name: string, payload: { fee?: number; requirements?: ApiDocumentTypeRequirement[] }) => Promise<void>;
   onCreateDocumentType: (payload: { name: string; fee: number; requirements: ApiDocumentTypeRequirement[] }) => Promise<void>;
-  onCreateAnnouncement: (payload: { tag: AnnouncementTag; title: string; body: string; date?: string }) => Promise<void>;
-  onUpdateAnnouncement: (id: string, payload: Partial<{ tag: AnnouncementTag; title: string; body: string; date: string }>) => Promise<void>;
+  onCreateAnnouncement: (payload: AnnouncementInput) => Promise<void>;
+  onUpdateAnnouncement: (id: string, payload: Partial<AnnouncementInput>) => Promise<void>;
   onDeleteAnnouncement: (id: string) => Promise<void>;
   onNotificationRead: (id: string) => void;
   onMarkAllNotificationsRead: () => void;
@@ -135,6 +116,7 @@ export function AdminDashboard({
     if (updated && updated !== selectedRequest) setSelectedRequest(updated);
   }, [requests, selectedRequest]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<RequestStatus | "All">("All");
   const [showAddUser, setShowAddUser] = useState(false);
   const [viewUserId, setViewUserId] = useState<string | null>(null);
   const [editingDoc, setEditingDoc] = useState<string | null>(null);
@@ -149,6 +131,10 @@ export function AdminDashboard({
   const [newDocError, setNewDocError] = useState("");
 
   const [showNewAnnouncement, setShowNewAnnouncement] = useState(false);
+  const [newImage, setNewImage] = useState<File | null>(null);
+  const [editImage, setEditImage] = useState<File | null>(null);
+  const [editRemoveImage, setEditRemoveImage] = useState(false);
+  const [announcementSaving, setAnnouncementSaving] = useState(false);
   const [newTag, setNewTag] = useState<AnnouncementTag>("Announcement");
   const [newTitle, setNewTitle] = useState("");
   const [newBody, setNewBody] = useState("");
@@ -162,9 +148,10 @@ export function AdminDashboard({
   const awaitingApproval = requests.filter((r) => r.status === "Verified");
   const allFiltered = requests.filter(
     (r) =>
+      (statusFilter === "All" || r.status === statusFilter) && (
       r.residentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       r.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.docType.toLowerCase().includes(searchTerm.toLowerCase())
+      r.docType.toLowerCase().includes(searchTerm.toLowerCase()))
   );
   const revenue = requests.filter((r) => r.paid).reduce((sum, r) => sum + (r.fee || 0), 0);
 
@@ -236,7 +223,13 @@ export function AdminDashboard({
 
   async function submitNewAnnouncement() {
     if (!newTitle || !newBody) return;
-    await onCreateAnnouncement({ tag: newTag, title: newTitle, body: newBody });
+    setAnnouncementSaving(true);
+    try {
+      await onCreateAnnouncement({ tag: newTag, title: newTitle, body: newBody, image: newImage });
+    } finally {
+      setAnnouncementSaving(false);
+    }
+    setNewImage(null);
     setNewTag("Announcement");
     setNewTitle("");
     setNewBody("");
@@ -245,19 +238,26 @@ export function AdminDashboard({
 
   function startEditAnnouncement(a: ApiAnnouncement) {
     setEditingAnnouncement(a.id);
+    setEditImage(null);
+    setEditRemoveImage(false);
     setEditTag(a.tag);
     setEditTitle(a.title);
     setEditBody(a.body);
   }
 
   async function saveEditAnnouncement(id: string) {
-    await onUpdateAnnouncement(id, { tag: editTag, title: editTitle, body: editBody });
+    setAnnouncementSaving(true);
+    try {
+      await onUpdateAnnouncement(id, { tag: editTag, title: editTitle, body: editBody, image: editImage, removeImage: editRemoveImage && !editImage });
+    } finally {
+      setAnnouncementSaving(false);
+    }
     setEditingAnnouncement(null);
   }
 
   if (section === "notifications") {
     return (
-      <div className="p-8">
+      <div className="p-8 space-y-6">
         <NotificationsPanel
           notifications={notifications}
           onRead={onNotificationRead}
@@ -271,100 +271,7 @@ export function AdminDashboard({
   }
 
   if (section === "reports") {
-    return (
-      <div className="p-8 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Reports & Analytics</h2>
-            <p className="text-muted-foreground text-base">Barangay Campagao — {new Date().toLocaleDateString("en-PH", { month: "long", year: "numeric" })}</p>
-          </div>
-          <button onClick={() => exportRequestsCsv(requests)} className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-base font-semibold hover:bg-primary/90 transition-colors">
-            <Download size={16} /> Export Report
-          </button>
-        </div>
-
-        {!reports ? (
-          <div className="text-base text-muted-foreground">Loading reports...</div>
-        ) : (
-          <>
-            <div className="grid grid-cols-3 gap-4">
-              <StatCard label="Total This Month" value={reports.totalThisMonth} icon={<TrendingUp size={20} className="text-primary" />} color="bg-primary/10" />
-              <StatCard label="Released This Month" value={reports.releasedThisMonth} icon={<CheckCircle size={20} className="text-green-600" />} color="bg-green-50" />
-              <StatCard label="Revenue Collected" value={`₱${reports.revenue.toLocaleString()}`} icon={<DollarSign size={20} className="text-[#d4a017]" />} color="bg-amber-50" />
-            </div>
-
-            {reports.sources && (
-              <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
-                <h4 className="text-lg font-bold text-foreground mb-4" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Online vs Walk-in</h4>
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                  {[
-                    { label: "Requests (all time)", online: reports.sources.requests.Online, walkIn: reports.sources.requests["Walk-in"] },
-                    { label: "Requests this month", online: reports.sources.requestsThisMonth.Online, walkIn: reports.sources.requestsThisMonth["Walk-in"] },
-                    { label: "Resident records", online: reports.sources.residents.Online, walkIn: reports.sources.residents["Walk-in"] },
-                  ].map((row) => (
-                    <div key={row.label} className="p-3 rounded-lg bg-[#f0f3f8]">
-                      <div className="text-sm text-muted-foreground mb-2">{row.label}</div>
-                      <div className="flex items-baseline gap-4">
-                        <div>
-                          <div className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{row.online}</div>
-                          <div className="text-xs font-semibold text-blue-700">Online</div>
-                        </div>
-                        <div>
-                          <div className="text-2xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{row.walkIn}</div>
-                          <div className="text-xs font-semibold text-orange-700">Walk-in</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-6">
-              <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
-                <h4 className="text-lg font-bold text-foreground mb-4" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Monthly Requests</h4>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={reports.monthly}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
-                    <XAxis dataKey="month" tick={{ fontSize: 13, fill: "#5a6a82" }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 13, fill: "#5a6a82" }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ borderRadius: "8px", border: "1px solid #dde3ed", fontSize: "13px" }} />
-                    <Bar dataKey="requests" fill="#1a3a6b" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
-                <h4 className="text-lg font-bold text-foreground mb-4" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Document Distribution</h4>
-                <ResponsiveContainer width="100%" height={200}>
-                  <PieChart>
-                    <Pie data={reports.distribution} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value">
-                      {reports.distribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ borderRadius: "8px", border: "1px solid #dde3ed", fontSize: "13px" }} />
-                    <Legend iconSize={11} iconType="circle" wrapperStyle={{ fontSize: "13px" }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
-              <h4 className="text-lg font-bold text-foreground mb-4" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Status Breakdown</h4>
-              <div className="grid grid-cols-3 lg:grid-cols-7 gap-3">
-                {STATUS_ORDER.map((status) => (
-                  <div key={status} className="text-center p-3 rounded-lg bg-[#f0f3f8]">
-                    <div className="text-2xl font-bold text-foreground mb-1" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{reports.statusCounts[status] || 0}</div>
-                    <StatusBadge status={status} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-    );
+    return <ReportsView reports={reports} requests={requests} />;
   }
 
   if (section === "users") {
@@ -372,21 +279,19 @@ export function AdminDashboard({
       <div className="p-8 space-y-6">
         {showAddUser && <AddUserModal onClose={() => setShowAddUser(false)} onCreate={onCreateUser} />}
         {viewUserId && <UserDetailModal userId={viewUserId} onClose={() => setViewUserId(null)} />}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>User Accounts</h2>
-            <p className="text-muted-foreground text-base">
-              {users.filter((u) => u.accountType === "Walk-in").length} walk-in record(s) added by staff. These have no login.
-            </p>
-          </div>
+        <PageHeader
+          icon={<Users size={22} />}
+          title="User Accounts"
+          subtitle={`${users.length} account${users.length === 1 ? "" : "s"} · ${users.filter((u) => u.accountType === "Walk-in").length} walk-in record(s) added by staff (no login)`}
+        >
           <button onClick={() => setShowAddUser(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-base font-semibold hover:bg-primary/90 transition-colors">
             <Plus size={16} /> Add User
           </button>
-        </div>
-        <div className="bg-card rounded-xl border border-border shadow-sm overflow-x-auto">
+        </PageHeader>
+        <div className="ui-table-card">
           <table className="w-full min-w-[950px]">
             <thead>
-              <tr className="border-b border-border bg-[#f0f3f8]">
+              <tr className="ui-thead">
                 {["ID", "Name", "Gender", "Date of Birth", "Email", "Contact No.", "Role", "Date Joined", "Status", ""].map((h) => (
                   <th key={h} className="px-5 py-3.5 text-left text-sm font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>
                 ))}
@@ -394,7 +299,7 @@ export function AdminDashboard({
             </thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.id} className="border-b border-border hover:bg-[#f0f3f8]/70 transition-colors">
+                <tr key={u.id} className="border-b border-border">
                   <td className="px-5 py-3.5 text-sm font-mono text-muted-foreground">{u.id}</td>
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-2.5">
@@ -439,7 +344,7 @@ export function AdminDashboard({
                 </tr>
               ))}
               {users.length === 0 && (
-                <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-base">No user accounts found.</td></tr>
+                <tr><td colSpan={10} className="ui-empty text-base">No user accounts found.</td></tr>
               )}
             </tbody>
           </table>
@@ -455,15 +360,14 @@ export function AdminDashboard({
         {templateDocType && (
           <CertificateEditorModal docType={templateDocType} onClose={() => setTemplateDoc(null)} onSave={onSaveCertificateTemplate} />
         )}
-        <div className="flex items-center justify-between">
-          <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Document Types & Fees</h2>
+        <PageHeader icon={<FileText size={22} />} title="Document Types & Fees" subtitle="Set fees, requirements and the certificate wording for each document.">
           <button onClick={() => setShowNewDoc((v) => !v)} className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-base font-semibold hover:bg-primary/90 transition-colors">
             <Plus size={16} /> New Document
           </button>
-        </div>
+        </PageHeader>
 
         {showNewDoc && (
-          <div className="bg-card border border-border rounded-xl p-5 shadow-sm space-y-3">
+          <div className="ui-card p-5 space-y-3">
             {newDocError && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{newDocError}</div>
             )}
@@ -516,7 +420,7 @@ export function AdminDashboard({
 
         <div className="grid grid-cols-1 gap-4">
           {docTypes.map((doc) => (
-            <div key={doc.name} className="bg-card border border-border rounded-xl p-5 shadow-sm">
+            <div key={doc.name} className="ui-card ui-card-hover p-5">
               {editingDoc === doc.name ? (
                 <div className="space-y-3">
                   <div className="text-lg font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{doc.name}</div>
@@ -594,15 +498,14 @@ export function AdminDashboard({
   if (section === "announcements") {
     return (
       <div className="p-8 space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Announcements</h2>
+        <PageHeader icon={<Megaphone size={22} />} title="Announcements" subtitle="Posts appear on the public landing page — no login needed to view them.">
           <button onClick={() => setShowNewAnnouncement((v) => !v)} className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-base font-semibold hover:bg-primary/90 transition-colors">
             <Plus size={16} /> New Announcement
           </button>
-        </div>
+        </PageHeader>
 
         {showNewAnnouncement && (
-          <div className="bg-card border border-border rounded-xl p-5 shadow-sm space-y-3">
+          <div className="ui-card p-5 space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-muted-foreground mb-1">Tag</label>
@@ -619,16 +522,17 @@ export function AdminDashboard({
               <label className="block text-sm text-muted-foreground mb-1">Details</label>
               <textarea value={newBody} onChange={(e) => setNewBody(e.target.value)} rows={3} placeholder="What residents need to know..." className={announcementInputClass} />
             </div>
+            <ImagePicker file={newImage} onChange={setNewImage} />
             <div className="flex gap-2">
-              <button onClick={() => setShowNewAnnouncement(false)} className="px-4 py-1.5 rounded-lg border border-border text-foreground text-sm font-semibold hover:bg-muted transition-colors">Cancel</button>
-              <button onClick={submitNewAnnouncement} disabled={!newTitle || !newBody} className="px-4 py-1.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50">Post</button>
+              <button onClick={() => { setShowNewAnnouncement(false); setNewImage(null); }} className="px-4 py-1.5 rounded-lg border border-border text-foreground text-sm font-semibold hover:bg-muted transition-colors">Cancel</button>
+              <button onClick={submitNewAnnouncement} disabled={!newTitle || !newBody || announcementSaving} className="px-4 py-1.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50">{announcementSaving ? "Posting..." : "Post"}</button>
             </div>
           </div>
         )}
 
         <div className="grid grid-cols-1 gap-4">
           {announcements.map((a) => (
-            <div key={a.id} className="bg-card border border-border rounded-xl p-5 shadow-sm">
+            <div key={a.id} className="ui-card ui-card-hover p-5">
               {editingAnnouncement === a.id ? (
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
@@ -647,13 +551,23 @@ export function AdminDashboard({
                     <label className="block text-sm text-muted-foreground mb-1">Details</label>
                     <textarea value={editBody} onChange={(e) => setEditBody(e.target.value)} rows={3} className={announcementInputClass} />
                   </div>
+                  <ImagePicker
+                    file={editImage}
+                    existingUrl={a.image && !editRemoveImage ? api.fileUrl(a.image) : null}
+                    onChange={setEditImage}
+                    onRemoveExisting={() => setEditRemoveImage(true)}
+                  />
                   <div className="flex gap-2">
                     <button onClick={() => setEditingAnnouncement(null)} className="px-4 py-1.5 rounded-lg border border-border text-foreground text-sm font-semibold hover:bg-muted transition-colors">Cancel</button>
-                    <button onClick={() => saveEditAnnouncement(a.id)} className="px-4 py-1.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors">Save</button>
+                    <button onClick={() => saveEditAnnouncement(a.id)} disabled={announcementSaving} className="px-4 py-1.5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50">{announcementSaving ? "Saving..." : "Save"}</button>
                   </div>
                 </div>
               ) : (
-                <>
+                <div className="flex flex-col gap-5 sm:flex-row">
+                  {a.image && (
+                    <img src={api.fileUrl(a.image)} alt={a.title} className="h-40 w-full flex-shrink-0 rounded-xl object-cover sm:w-64" />
+                  )}
+                  <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2.5 flex-wrap">
                       <span className={`text-sm font-bold px-3 py-1 rounded-full ${ANNOUNCEMENT_TAG_STYLE[a.tag]}`}>{a.tag}</span>
@@ -668,7 +582,8 @@ export function AdminDashboard({
                   </div>
                   <div className="text-lg font-bold text-foreground mb-1" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>{a.title}</div>
                   <p className="text-base text-muted-foreground">{a.body}</p>
-                </>
+                  </div>
+                </div>
               )}
             </div>
           ))}
@@ -686,11 +601,11 @@ export function AdminDashboard({
         {selectedRequest && (
           <RequestDetailModal req={selectedRequest} docTypes={docTypes} onClose={() => setSelectedRequest(null)} role="admin" onStatusChange={onStatusChange} onMarkPaid={onMarkPaid} />
         )}
-        <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>For Approval</h2>
-        <div className="bg-card rounded-xl border border-border overflow-x-auto shadow-sm">
+        <PageHeader icon={<Shield size={22} />} title="For Approval" subtitle={`${awaitingApproval.length} verified request${awaitingApproval.length === 1 ? "" : "s"} awaiting staff approval.`} />
+        <div className="ui-table-card">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-border bg-[#f0f3f8]">
+              <tr className="ui-thead">
                 {TABLE_HEADERS.map((h) => (
                   <th key={h} className="px-5 py-3.5 text-left text-sm font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>
                 ))}
@@ -701,7 +616,7 @@ export function AdminDashboard({
                 <RequestRow key={r.id} req={r} onView={setSelectedRequest} showActions role="admin" onStatusChange={onStatusChange} onMarkPaid={onMarkPaid} />
               ))}
               {awaitingApproval.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground text-base">No requests pending approval.</td></tr>
+                <tr><td colSpan={7} className="ui-empty text-base">No requests pending approval.</td></tr>
               )}
             </tbody>
           </table>
@@ -716,28 +631,33 @@ export function AdminDashboard({
         {selectedRequest && (
           <RequestDetailModal req={selectedRequest} docTypes={docTypes} onClose={() => setSelectedRequest(null)} role="admin" onStatusChange={onStatusChange} onMarkPaid={onMarkPaid} />
         )}
-        <div className="flex items-center justify-between">
-          <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>All Requests</h2>
-          <div className="flex items-center gap-2">
+        <PageHeader icon={<ClipboardList size={22} />} title="All Requests" subtitle={`${allFiltered.length} of ${requests.length} request${requests.length === 1 ? "" : "s"}`}>
             <div className="relative">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search..."
-                className="pl-8 pr-3 py-2 rounded-lg border border-border bg-card text-base focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary w-52 transition-all"
+                placeholder="Search by name, ID or document..."
+                className="pl-9 pr-3 py-2.5 rounded-xl border border-border bg-[#f7f9fc] text-base focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-white w-60 transition-all"
               />
             </div>
-            <button className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-base text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors">
-              <Filter size={15} /> Filter
-            </button>
-          </div>
-        </div>
-        <div className="bg-card rounded-xl border border-border overflow-x-auto shadow-sm">
+            <div className="relative">
+              <Filter size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as RequestStatus | "All")}
+                className="pl-9 pr-3 py-2.5 rounded-xl border border-border bg-[#f7f9fc] text-base text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary cursor-pointer"
+              >
+                <option value="All">All statuses</option>
+                {STATUS_ORDER.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+        </PageHeader>
+        <div className="ui-table-card">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-border bg-[#f0f3f8]">
+              <tr className="ui-thead">
                 {TABLE_HEADERS.map((h) => (
                   <th key={h} className="px-5 py-3.5 text-left text-sm font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>
                 ))}
@@ -760,10 +680,15 @@ export function AdminDashboard({
       {selectedRequest && (
         <RequestDetailModal req={selectedRequest} docTypes={docTypes} onClose={() => setSelectedRequest(null)} role="admin" onStatusChange={onStatusChange} onMarkPaid={onMarkPaid} />
       )}
-      <div>
-        <h2 className="text-3xl font-bold text-foreground" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Admin Overview</h2>
-        <p className="text-muted-foreground text-base">Barangay Campagao — {new Date().toLocaleDateString("en-PH", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
-      </div>
+      <DashboardHero
+        eyebrow="Admin Portal"
+        title="Admin Overview"
+        subtitle="Monitor requests, manage accounts and certificate templates for Barangay Campagao."
+        actions={[
+          { label: "Reports", icon: <BarChart2 size={16} />, onClick: () => setSection("reports"), primary: true },
+          { label: "Document Types", icon: <FileText size={16} />, onClick: () => setSection("documents") },
+        ]}
+      />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Total Requests" value={requests.length} icon={<ClipboardList size={20} className="text-primary" />} color="bg-primary/10" />
@@ -773,7 +698,7 @@ export function AdminDashboard({
       </div>
 
       <div className="grid grid-cols-2 gap-6">
-        <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
+        <div className="ui-card p-5">
           <h4 className="text-lg font-bold text-foreground mb-4" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Requests For Approval</h4>
           {awaitingApproval.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-muted-foreground text-base">No requests pending approval</div>
@@ -792,7 +717,7 @@ export function AdminDashboard({
           )}
         </div>
 
-        <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
+        <div className="ui-card p-5">
           <h4 className="text-lg font-bold text-foreground mb-3" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Status Breakdown</h4>
           <div className="grid grid-cols-3 gap-2">
             {STATUS_ORDER.map((status) => (
@@ -809,10 +734,10 @@ export function AdminDashboard({
 
       <div>
         <h3 className="text-lg font-bold text-foreground mb-3" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>All Recent Requests</h3>
-        <div className="bg-card rounded-xl border border-border overflow-x-auto shadow-sm">
+        <div className="ui-table-card">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-border bg-[#f0f3f8]">
+              <tr className="ui-thead">
                 {TABLE_HEADERS.map((h) => (
                   <th key={h} className="px-5 py-3.5 text-left text-sm font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>
                 ))}
