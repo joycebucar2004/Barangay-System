@@ -84,6 +84,9 @@ export interface ApiRequest {
   updatedAt: string;
   fee: number;
   paid: boolean;
+  amountPaid?: number;
+  balance?: number;
+  receipts?: ApiPaymentReceipt[];
   printedAt?: string | null;
   remarks?: string;
   address: string;
@@ -91,6 +94,14 @@ export interface ApiRequest {
   dateOfBirth?: string;
   civilStatus?: CivilStatus;
   files: ApiRequestFile[];
+}
+
+export interface ApiPaymentReceipt {
+  receiptNumber: string;
+  amount: number;
+  amountTendered: number;
+  change: number;
+  paidAt: string;
 }
 
 export interface ApiNotification {
@@ -147,6 +158,7 @@ function announcementFormData(payload: Partial<AnnouncementInput>) {
 export interface ReportsSummary {
   totalThisMonth: number;
   releasedThisMonth: number;
+  totalBilled: number;
   revenue: number;
   revenueThisMonth?: number;
   outstanding?: number; // unpaid fees on active (not rejected/cancelled) requests
@@ -233,8 +245,8 @@ export const api = {
       body: JSON.stringify({ status, remarks }),
     });
   },
-  async markRequestPaid(id: string) {
-    return request<{ request: ApiRequest }>(`/requests/${id}/payment`, { method: "PATCH" });
+  async markRequestPaid(id: string, amountTendered: number) {
+    return request<{ request: ApiRequest }>(`/requests/${id}/payment`, { method: "PATCH", body: JSON.stringify({ amountTendered }) });
   },
   async markCertificatePrinted(id: string) {
     return request<{ request: ApiRequest }>(`/requests/${id}/print`, { method: "PATCH" });
@@ -295,8 +307,10 @@ export const api = {
     return request<{ user: ApiUser }>(`/users/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
   },
 
-  async reportsSummary() {
-    return request<ReportsSummary>("/reports/summary");
+  async reportsSummary(period: "daily" | "monthly" | "yearly" = "monthly", date?: string) {
+    const params = new URLSearchParams({ period });
+    if (date) params.set("date", date);
+    return request<ReportsSummary>(`/reports/summary?${params.toString()}`);
   },
 
   async listAnnouncements() {

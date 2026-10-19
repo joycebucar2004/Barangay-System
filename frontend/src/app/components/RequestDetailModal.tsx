@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { X, Check, CheckCircle, Circle, Shield, Package, Printer, FileText, Banknote, ScrollText, Upload, Ban, RefreshCw } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
+import { PaymentDialog } from "./PaymentDialog";
 import { api } from "../lib/api";
 import { openCertificatePdf } from "../lib/certificate";
 import type { ApiDocumentType, ApiRequest, Role, RequestStatus } from "../lib/api";
@@ -22,7 +23,7 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
   onClose: () => void;
   role: Role;
   onStatusChange: (id: string, status: RequestStatus, remarks?: string) => void;
-  onMarkPaid?: (id: string) => void;
+  onMarkPaid?: (id: string, amountTendered: number) => Promise<void>;
   onPrintCertificate?: (id: string) => Promise<ApiRequest | null>;
   onResubmit?: (id: string, formData: FormData) => Promise<ApiRequest>;
   onCancel?: (id: string) => void;
@@ -39,16 +40,20 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
   const resubmitInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
 
   const steps: RequestStatus[] = ["Pending", "Verified", "Approved", "Ready for Pickup", "Released"];
   const currentStep = steps.indexOf(req.status);
   const isSideExit = req.status === "Rejected" || req.status === "Cancelled";
   const requirements = docTypes.find((d) => d.name === req.docType)?.requirements ?? [];
+  const receiptPaidAmount = (req.receipts || []).reduce((sum, receipt) => sum + receipt.amount, 0);
+  const recordedPaidAmount = (req.receipts || []).length ? receiptPaidAmount : req.amountPaid || 0;
+  const recordedBalance = Math.max(0, req.fee - recordedPaidAmount);
   // Staff owns the whole decision pipeline, including payment, ready for pickup, and release.
-  const canCollectPayment = role === "staff" && !req.paid && req.status !== "Rejected" && !!req.printedAt && !!onMarkPaid;
+  const canCollectPayment = role === "staff" && req.fee > 0 && !req.paid && ["Approved", "Ready for Pickup"].includes(req.status) && !!onMarkPaid;
   // Printing the official certificate is staff's job, and no longer waits on payment -- that's
   // collected afterward. Residents never print it themselves, and admin is view-only here.
-  const canPrintCertificate = role === "staff" && PRINTABLE_STATUSES.includes(req.status) && !!onPrintCertificate;
+  const canPrintCertificate = role === "staff" && PRINTABLE_STATUSES.includes(req.status) && !!onPrintCertificate && (req.fee === 0 || req.paid);
   // Staff/admin can view the soft copy from Verified onward; residents once it's approved.
   const canPreviewSoftCopy = role === "resident" ? PRINTABLE_STATUSES.includes(req.status) : SOFT_COPY_STATUSES.includes(req.status);
   const canMarkReady = role === "staff" && req.status === "Approved" && !!req.printedAt && req.paid;
@@ -77,6 +82,8 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
       toast.error("Could not generate the certificate PDF.");
     }
   }
+
+  function handleRecordPayment() { setShowPaymentDialog(true); }
 
   function confirmReject() {
     if (!rejectReason.trim()) {
@@ -132,6 +139,7 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,28,46,0.6)", backdropFilter: "blur(4px)" }}>
+      {showPaymentDialog && <PaymentDialog request={req} onClose={() => setShowPaymentDialog(false)} onConfirm={(amountTendered) => onMarkPaid!(req.id, amountTendered)} />}
       <div className="ui-modal bg-card rounded-2xl border border-border shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" style={{ fontFamily: "'DM Sans', sans-serif" }}>
         <div className="relative flex items-center justify-between overflow-hidden rounded-t-2xl p-6 text-white" style={{ background: "linear-gradient(120deg, #0d2244 0%, #1a3a6b 60%, #24508f 100%)" }}>
           <div className="absolute inset-x-0 bottom-0 h-1" style={{ background: "linear-gradient(90deg, #d4a017, rgba(212,160,23,0.15))" }} />
@@ -180,7 +188,7 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
               { label: "Submitted", value: req.submittedAt },
               { label: "Last Updated", value: req.updatedAt },
               { label: "Fee", value: req.fee === 0 ? "Free" : `₱${req.fee}` },
-              { label: "Payment", value: req.paid ? "Paid" : "Unpaid" },
+              { label: "Payment", value: req.fee === 0 ? "Free" : recordedBalance === 0 ? "Paid" : req.paid ? `Marked paid · no receipt recorded (${recordedBalance.toFixed(2)} unverified)` : `${recordedPaidAmount.toFixed(2)} paid · ${recordedBalance.toFixed(2)} balance` },
               { label: "Certificate", value: req.printedAt ? `Printed ${new Date(req.printedAt).toLocaleDateString()}` : "Not yet printed" },
               ...(req.source === "Walk-in"
                 ? [{ label: "Filed Via", value: `Walk-in — encoded by ${req.encodedByName || req.encodedBy || "staff"}` }]
@@ -248,16 +256,21 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
             <div className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
               {role === "staff"
                 ? "This request is approved — print the certificate to move it forward."
-                : "Waiting on staff to print the certificate before payment can be collected."}
+                : "Payment must be recorded before staff can print the official certificate."}
             </div>
           )}
           {!req.paid && req.fee > 0 && !!req.printedAt && req.status !== "Rejected" && req.status !== "Cancelled" && (
             <div className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
               {role === "resident"
-                ? "The certificate has been printed — please settle payment at the Barangay Hall to claim it."
+                ? "Payment is still due. Staff will print the official certificate after payment is recorded."
                 : role === "admin"
-                ? "The certificate has been printed by staff and is awaiting payment collection and release."
-                : "The certificate has been printed. Collect payment to move this to Ready for Pickup."}
+                ? "Payment is due before staff can print the official certificate and prepare it for pickup."
+                : "Collect payment before printing, then move this to Ready for Pickup."}
+            </div>
+          )}
+          {role === "staff" && req.paid && req.fee > 0 && !!req.printedAt && (req.receipts?.length || 0) > 0 && (
+            <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+              Payment is complete. Reprint the certificate to include O.R. No. {req.receipts![req.receipts!.length - 1].receiptNumber}.
             </div>
           )}
 
@@ -352,10 +365,10 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
             <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border">
               {canCollectPayment && (
                 <button
-                  onClick={() => onMarkPaid!(req.id)}
+                  onClick={handleRecordPayment}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-500 text-white text-base font-semibold hover:bg-amber-600 transition-colors"
                 >
-                  <Banknote size={16} /> Mark as Paid
+                  <Banknote size={16} /> Record Payment
                 </button>
               )}
               {role === "staff" && req.status === "Pending" && (
@@ -408,7 +421,7 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
                     <button
                       onClick={handlePrint}
                       disabled={printing}
-                      title={req.printedAt ? "Already printed once — this reprints it" : "Print the official certificate and notify staff to collect payment"}
+                      title={req.printedAt ? "Already printed once — this reprints it" : "Payment must be complete before printing the official certificate"}
                       className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border text-muted-foreground text-base font-semibold hover:bg-muted transition-colors disabled:opacity-60"
                     >
                       <Printer size={16} /> {printing ? "Printing..." : req.printedAt ? "Reprint Certificate" : "Print Certificate"}
@@ -423,3 +436,4 @@ export function RequestDetailModal({ req, docTypes, onClose, role, onStatusChang
     </div>
   );
 }
+

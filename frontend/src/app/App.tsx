@@ -18,7 +18,6 @@ import type {
   ApiRequest,
   ApiUser,
   CertificateContent,
-  ReportsSummary,
   Role,
   RequestStatus,
   UserProfileInput,
@@ -35,7 +34,6 @@ export default function App() {
   const [docTypes, setDocTypes] = useState<ApiDocumentType[]>([]);
   const [announcements, setAnnouncements] = useState<ApiAnnouncement[]>([]);
   const [users, setUsers] = useState<ApiUser[]>([]);
-  const [reports, setReports] = useState<ReportsSummary | null>(null);
   // Held in memory only (never persisted) so the Change Password form can be pre-filled
   // without retyping it. Cleared on logout and lost on page refresh.
   const [sessionPassword, setSessionPassword] = useState<string | null>(null);
@@ -99,9 +97,6 @@ export default function App() {
     if ((activeSection === "residents" || activeSection === "walk-in") && user.role === "staff") {
       api.listUsers().then(({ users }) => setUsers(users)).catch((err: any) => toast.error(err.message));
     }
-    if (activeSection === "reports" && (user.role === "admin" || user.role === "staff")) {
-      api.reportsSummary().then(setReports).catch((err: any) => toast.error(err.message));
-    }
   }, [activeSection, user]);
 
   function handleAuthenticated(token: string, authedUser: ApiUser, password: string) {
@@ -117,7 +112,6 @@ export default function App() {
     setRequests([]);
     setNotifications([]);
     setUsers([]);
-    setReports(null);
     setSessionPassword(null);
     setActiveSection("dashboard");
     setShowLanding(true);
@@ -134,13 +128,14 @@ export default function App() {
     }
   }
 
-  async function handleMarkPaid(id: string) {
+  async function handleMarkPaid(id: string, amountTendered: number) {
     try {
-      const { request } = await api.markRequestPaid(id);
+      const { request } = await api.markRequestPaid(id, amountTendered);
       setRequests((prev) => prev.map((r) => (r.id === id ? request : r)));
       toast.success(`Payment recorded for ${id}.`);
     } catch (err: any) {
       toast.error(err.message || "Could not record payment.");
+      throw err;
     }
   }
 
@@ -357,7 +352,6 @@ export default function App() {
             notifications={notifications}
             docTypes={docTypes}
             users={users}
-            reports={reports}
             onStatusChange={handleStatusChange}
             onMarkPaid={handleMarkPaid}
             onPrintCertificate={handlePrintCertificate}
@@ -376,7 +370,6 @@ export default function App() {
             requests={requests}
             docTypes={docTypes}
             users={users}
-            reports={reports}
             announcements={announcements}
             notifications={notifications}
             onStatusChange={handleStatusChange}

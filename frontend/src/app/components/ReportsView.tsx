@@ -1,17 +1,17 @@
+import { useEffect, useState } from "react";
 import { BarChart2, CheckCircle, Download, TrendingUp, Wallet, HandCoins, CalendarCheck } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PageHeader } from "./PageHeader";
 import { StatCard } from "./StatCard";
-import { StatusBadge } from "./StatusBadge";
-import type { ApiRequest, ReportsSummary, RequestStatus } from "../lib/api";
+import { api } from "../lib/api";
+import type { ApiRequest, ReportsSummary } from "../lib/api";
 
-const STATUS_ORDER: RequestStatus[] = ["Pending", "Verified", "Approved", "Ready for Pickup", "Released", "Rejected", "Cancelled"];
 const HEADING = { fontFamily: "'Plus Jakarta Sans', sans-serif" };
 const TOOLTIP_STYLE = { borderRadius: "10px", border: "1px solid #dde3ed", fontSize: "13px" };
 
 const peso = (n: number) => `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
-function exportRequestsCsv(requests: ApiRequest[]) {
+function exportRequestsCsv(requests: ApiRequest[], period: string, date: string) {
   const header = "ID,Resident,Document,Source,Encoded By,Status,Fee,Paid,Submitted,Updated\n";
   const csvCell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const rows = requests
@@ -21,24 +21,101 @@ function exportRequestsCsv(requests: ApiRequest[]) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `barangay-requests-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `barangay-requests-${period}-${date}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-export function ReportsView({ reports, requests }: { reports: ReportsSummary | null; requests: ApiRequest[] }) {
-  const byDocTotal = reports?.revenueByDocType?.reduce((sum, d) => sum + d.total, 0) || 0;
+export function ReportsView({ requests }: { requests: ApiRequest[] }) {
+  const [period, setPeriod] = useState<"daily" | "monthly" | "yearly">("monthly");
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [filteredReports, setFilteredReports] = useState<ReportsSummary | null>(null);
+  const [reportsError, setReportsError] = useState("");
+  const [reportsLoading, setReportsLoading] = useState(true);
+  const [retryCount, setRetryCount] = useState(0);
+  const reportDate = period === "daily" ? selectedDate.slice(0, 10) : period === "monthly" ? selectedDate.slice(0, 7) : selectedDate.slice(0, 4);
+  const [selectedYear, selectedMonth, selectedDay] = selectedDate.split("-").map(Number);
+  const daysInSelectedMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+  const periodLabel = period === "daily"
+    ? new Date(`${reportDate}T00:00:00`).toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" })
+    : period === "monthly"
+    ? new Date(`${reportDate}-01T00:00:00`).toLocaleDateString("en-PH", { month: "long", year: "numeric" })
+    : reportDate;
+  const reports = filteredReports;
+  const byDocTotal = (reports?.revenueByDocType ?? []).reduce((total, item) => total + item.total, 0);
+
+  useEffect(() => {
+    let active = true;
+    setReportsLoading(true);
+    setReportsError("");
+    api.reportsSummary(period, reportDate)
+      .then((result) => { if (active) setFilteredReports(result); })
+      .catch((error: unknown) => {
+        if (active) {
+          setFilteredReports(null);
+          setReportsError(error instanceof Error ? error.message : "Unable to load the report.");
+        }
+      })
+      .finally(() => { if (active) setReportsLoading(false); });
+    return () => { active = false; };
+  }, [period, reportDate, retryCount]);
+
+  const periodRequests = requests.filter((request) => request.submittedAt.slice(0, period === "daily" ? 10 : period === "monthly" ? 7 : 4) === reportDate);
+  function updatePeriod(next: "daily" | "monthly" | "yearly") {
+    setPeriod(next);
+  }
+
+  function updateDatePart(part: "day" | "month" | "year", value: number) {
+    let year = selectedYear;
+    let month = selectedMonth;
+    let day = selectedDay;
+    if (part === "day") day = value;
+    if (part === "month") month = value;
+    if (part === "year") year = value;
+    day = Math.min(day, new Date(year, month, 0).getDate());
+    setSelectedDate(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
+  }
 
   return (
     <div className="p-8 space-y-6">
-      <PageHeader icon={<BarChart2 size={22} />} title="Reports & Analytics" subtitle={`Barangay Campagao — ${new Date().toLocaleDateString("en-PH", { month: "long", year: "numeric" })}`}>
-        <button onClick={() => exportRequestsCsv(requests)} className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-base font-semibold hover:bg-primary/90 transition-colors">
+      <PageHeader icon={<BarChart2 size={22} />} title="Reports & Analytics" subtitle={`Barangay Campagao · ${periodLabel}`}>
+        <label className="text-sm font-semibold text-muted-foreground">Period
+          <select value={period} onChange={(event) => updatePeriod(event.target.value as "daily" | "monthly" | "yearly")} className="ml-2 rounded-lg border border-border bg-white px-3 py-2.5 text-foreground">
+            <option value="daily">Daily</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option>
+          </select>
+        </label>
+        <label className="text-sm font-semibold text-muted-foreground">Day
+          <select disabled={period !== "daily"} value={selectedDay} onChange={(event) => updateDatePart("day", Number(event.target.value))} className="ml-2 rounded-lg border border-border bg-white px-3 py-2.5 text-foreground disabled:bg-slate-100 disabled:text-muted-foreground">
+            {Array.from({ length: daysInSelectedMonth }, (_, index) => index + 1).map((day) => <option key={day} value={day}>{day}</option>)}
+          </select>
+        </label>
+        <label className="text-sm font-semibold text-muted-foreground">Month
+          <select disabled={period === "yearly"} value={selectedMonth} onChange={(event) => updateDatePart("month", Number(event.target.value))} className="ml-2 rounded-lg border border-border bg-white px-3 py-2.5 text-foreground disabled:bg-slate-100 disabled:text-muted-foreground">
+            {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => <option key={month} value={month}>{new Date(2000, month - 1, 1).toLocaleDateString("en-PH", { month: "long" })}</option>)}
+          </select>
+        </label>
+        <label className="text-sm font-semibold text-muted-foreground">Year
+          <select value={selectedYear} onChange={(event) => updateDatePart("year", Number(event.target.value))} className="ml-2 rounded-lg border border-border bg-white px-3 py-2.5 text-foreground">
+            {Array.from({ length: 21 }, (_, index) => 2020 + index).map((year) => <option key={year} value={year}>{year}</option>)}
+          </select>
+        </label>
+        <button onClick={() => exportRequestsCsv(periodRequests, period, reportDate)} className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-white text-base font-semibold hover:bg-primary/90 transition-colors">
           <Download size={16} /> Export Report
         </button>
       </PageHeader>
 
-      {!reports ? (
+      {reportsLoading ? (
         <div className="ui-card p-10 text-center text-base text-muted-foreground">Loading reports...</div>
+      ) : reportsError ? (
+        <div role="alert" className="ui-card p-8 text-center">
+          <p className="font-semibold text-foreground">Could not load this report</p>
+          <p className="mt-2 text-sm text-muted-foreground">{reportsError}</p>
+          <button onClick={() => setRetryCount((count) => count + 1)} className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white" aria-label="Retry report loading">
+            Retry
+          </button>
+        </div>
+      ) : !reports ? (
+        <div className="ui-card p-10 text-center text-base text-muted-foreground">No report data is available.</div>
       ) : (
         <>
           {/* Barangay funds from certificate fees */}
@@ -48,11 +125,12 @@ export function ReportsView({ reports, requests }: { reports: ReportsSummary | n
             <div className="relative flex flex-wrap items-center gap-2 text-sm font-semibold uppercase tracking-[0.14em] text-[#f3d27a]">
               <Wallet size={16} /> Barangay Collections
             </div>
-            <div className="relative mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="relative mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               {[
-                { label: "Total collected (all time)", value: peso(reports.revenue), icon: <Wallet size={18} />, note: "From paid certificate fees" },
-                { label: "Collected this month", value: peso(reports.revenueThisMonth ?? 0), icon: <CalendarCheck size={18} />, note: new Date().toLocaleDateString("en-PH", { month: "long", year: "numeric" }) },
-                { label: "Still to collect", value: peso(reports.outstanding ?? 0), icon: <HandCoins size={18} />, note: `${reports.outstandingCount ?? 0} unpaid request${reports.outstandingCount === 1 ? "" : "s"}` },
+                { label: "Expected Charges", value: peso(reports.totalBilled), icon: <HandCoins size={18} />, note: "Fees for selected requests filed" },
+                { label: "Collections Received", value: peso(reports.revenue), icon: <Wallet size={18} />, note: `Payments received ${periodLabel}` },
+                { label: "Requests Filed", value: reports.totalThisMonth, icon: <CalendarCheck size={18} />, note: periodLabel },
+                { label: "Outstanding Balance", value: peso(reports.outstanding ?? 0), icon: <HandCoins size={18} />, note: `${reports.outstandingCount ?? 0} unpaid request${reports.outstandingCount === 1 ? "" : "s"} filed in period` },
               ].map((m) => (
                 <div key={m.label} className="rounded-xl border border-white/15 bg-white/[0.07] p-4 backdrop-blur-sm">
                   <div className="flex items-center gap-2 text-sm text-blue-100"><span className="text-[#f3d27a]">{m.icon}</span>{m.label}</div>
@@ -65,8 +143,8 @@ export function ReportsView({ reports, requests }: { reports: ReportsSummary | n
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
             <div className="ui-card p-5 lg:col-span-3">
-              <h4 className="text-lg font-bold text-foreground mb-1" style={HEADING}>Monthly Collections</h4>
-              <p className="text-sm text-muted-foreground mb-4">Fees collected over the last 6 months</p>
+              <h4 className="text-lg font-bold text-foreground mb-1" style={HEADING}>Collections in selected period</h4>
+              <p className="text-sm text-muted-foreground mb-4">Collection trend for {periodLabel}</p>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={reports.monthly}>
                   <defs>
@@ -108,41 +186,14 @@ export function ReportsView({ reports, requests }: { reports: ReportsSummary | n
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <StatCard label="Requests This Month" value={reports.totalThisMonth} icon={<TrendingUp size={20} className="text-primary" />} color="bg-primary/10" />
-            <StatCard label="Released This Month" value={reports.releasedThisMonth} icon={<CheckCircle size={20} className="text-green-600" />} color="bg-green-50" />
-            <StatCard label="Unpaid Requests" value={reports.outstandingCount ?? 0} icon={<HandCoins size={20} className="text-amber-600" />} color="bg-amber-50" />
+            <StatCard label="Requests in Period" value={reports.totalThisMonth} icon={<TrendingUp size={20} className="text-primary" />} color="bg-primary/10" />
+            <StatCard label="Released Requests in Period" value={reports.releasedThisMonth} icon={<CheckCircle size={20} className="text-green-600" />} color="bg-green-50" />
+            <StatCard label="Unpaid Requests in Period" value={reports.outstandingCount ?? 0} icon={<HandCoins size={20} className="text-amber-600" />} color="bg-amber-50" />
           </div>
-
-          {reports.sources && (
-            <div className="ui-card p-5">
-              <h4 className="text-lg font-bold text-foreground mb-4" style={HEADING}>Online vs Walk-in</h4>
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                {[
-                  { label: "Requests (all time)", online: reports.sources.requests.Online, walkIn: reports.sources.requests["Walk-in"] },
-                  { label: "Requests this month", online: reports.sources.requestsThisMonth.Online, walkIn: reports.sources.requestsThisMonth["Walk-in"] },
-                  { label: "Resident records", online: reports.sources.residents.Online, walkIn: reports.sources.residents["Walk-in"] },
-                ].map((row) => (
-                  <div key={row.label} className="p-4 rounded-xl bg-[#f3f6fb]">
-                    <div className="text-sm text-muted-foreground mb-2">{row.label}</div>
-                    <div className="flex items-baseline gap-5">
-                      <div>
-                        <div className="text-2xl font-bold text-foreground" style={HEADING}>{row.online}</div>
-                        <div className="text-xs font-semibold text-blue-700">Online</div>
-                      </div>
-                      <div>
-                        <div className="text-2xl font-bold text-foreground" style={HEADING}>{row.walkIn}</div>
-                        <div className="text-xs font-semibold text-orange-700">Walk-in</div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="ui-card p-5">
-              <h4 className="text-lg font-bold text-foreground mb-4" style={HEADING}>Monthly Requests</h4>
+              <h4 className="text-lg font-bold text-foreground mb-4" style={HEADING}>Requests in selected period</h4>
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={reports.monthly}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
@@ -170,17 +221,6 @@ export function ReportsView({ reports, requests }: { reports: ReportsSummary | n
             </div>
           </div>
 
-          <div className="ui-card p-5">
-            <h4 className="text-lg font-bold text-foreground mb-4" style={HEADING}>Status Breakdown</h4>
-            <div className="grid grid-cols-3 lg:grid-cols-7 gap-3">
-              {STATUS_ORDER.map((status) => (
-                <div key={status} className="text-center p-3 rounded-xl bg-[#f3f6fb]">
-                  <div className="text-2xl font-bold text-foreground mb-1" style={HEADING}>{reports.statusCounts[status] || 0}</div>
-                  <StatusBadge status={status} />
-                </div>
-              ))}
-            </div>
-          </div>
         </>
       )}
     </div>

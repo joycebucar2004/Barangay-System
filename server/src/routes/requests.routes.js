@@ -1,7 +1,7 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
-import { getUserById, fullName, listDocumentTypes, listRequestsForResident, listAllRequests, getRequestById, createRequest, createWalkInResident, addRequestFiles, replaceRequestFile, updateRequestStatus, markRequestPaid, markRequestPrinted } from "../db.js";
+import { getUserById, fullName, listDocumentTypes, listRequestsForResident, listAllRequests, getRequestById, createRequest, createWalkInResident, addRequestFiles, replaceRequestFile, updateRequestStatus, recordRequestPayment, markRequestPrinted } from "../db.js";
 import { authRequired, requireRole, toPublicUser } from "../auth.js";
 import { upload } from "../upload.js";
 import { notifyUser, notifyRole } from "../notify.js";
@@ -326,12 +326,15 @@ requestsRouter.patch("/:id/print", authRequired, requireRole("staff"), async (re
   try {
     const request = await getRequestById(req.params.id);
     if (!request) return res.status(404).json({ error: "Request not found" });
-    if (!PRINTABLE_STATUSES.includes(request.status)) {
+    if (!["Approved", "Ready for Pickup"].includes(request.status)) {
       return res.status(400).json({ error: "This request hasn't been approved yet" });
+    }
+    if (request.fee > 0 && !request.paid) {
+      return res.status(400).json({ error: "Payment must be complete before printing the certificate" });
     }
 
     const updated = await markRequestPrinted(req.params.id);
-    await notifyRole("admin", `Request ${request.id} (${request.docType}) has been printed by staff and is ready for payment collection.`);
+    await notifyRole("admin", `Request ${request.id} (${request.docType}) has been printed by staff after payment.`);
 
     res.json({ request: updated });
   } catch (err) {
@@ -341,19 +344,18 @@ requestsRouter.patch("/:id/print", authRequired, requireRole("staff"), async (re
 
 requestsRouter.patch("/:id/payment", authRequired, requireRole("staff"), async (req, res, next) => {
   try {
+    const amountTendered = Number(req.body?.amountTendered);
+    if (!Number.isFinite(amountTendered) || amountTendered < 0.01 || amountTendered > 99999999.99) return res.status(400).json({ error: "Enter a payment amount between ₱0.01 and ₱99,999,999.99" });
     const request = await getRequestById(req.params.id);
     if (!request) return res.status(404).json({ error: "Request not found" });
-    if (request.status === "Rejected") {
-      return res.status(400).json({ error: "Cannot record payment on a rejected request" });
+    if (request.status === "Rejected" || request.status === "Cancelled") {
+      return res.status(400).json({ error: "Cannot record payment on a rejected or cancelled request" });
     }
-    if (request.paid) {
-      return res.status(400).json({ error: "Request is already marked as paid" });
+    if (!PRINTABLE_STATUSES.includes(request.status)) {
+      return res.status(400).json({ error: "Payment can be recorded after the request is approved" });
     }
-    if (!request.printedAt) {
-      return res.status(400).json({ error: "The certificate must be printed by the admin before payment can be recorded" });
-    }
-
-    const updated = await markRequestPaid(req.params.id);
+    if (request.paid) return res.status(400).json({ error: "Request is already fully paid" });
+    const updated = await recordRequestPayment(req.params.id, request.residentId, req.userId, amountTendered);
     res.json({ request: updated });
   } catch (err) {
     next(err);

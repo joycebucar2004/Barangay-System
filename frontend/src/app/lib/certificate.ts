@@ -212,6 +212,8 @@ export function sanitizeCertificateHtml(html: string): string {
 export function certificatePageInnerHtml(request: ApiRequest, content: CertificateContent, { editable }: { editable: boolean }): string {
   const field = (name: keyof CertificateContent) => `data-field="${name}"${editable ? ` contenteditable="true"` : ""}`;
   const dateIssued = issuedDate(request).toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" });
+  const receiptList = request.receipts || [];
+  const officialReceiptNumber = request.paid && receiptList.length > 0 ? receiptList[receiptList.length - 1].receiptNumber : undefined;
 
   return `
     <div class="header">
@@ -233,7 +235,7 @@ export function certificatePageInnerHtml(request: ApiRequest, content: Certifica
     </div>
     <div class="footer">
       Cert. No.: ${escapeHtml(request.id)}<br/>
-      O.R. No.: ______________________<br/>
+      O.R. No.: ${escapeHtml(officialReceiptNumber || "______________________")}<br/>
       Date Issued: ${dateIssued}<br/>
       Doc. Stamp: ${request.fee === 0 ? "Exempted (Free)" : request.paid ? "Paid" : "Unpaid"}
     </div>`;

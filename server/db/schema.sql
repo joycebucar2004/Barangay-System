@@ -105,7 +105,7 @@ CREATE TABLE requests (
   updated_at     DATE NOT NULL,
   fee            DECIMAL(10,2) NOT NULL DEFAULT 0,
   paid           TINYINT(1) NOT NULL DEFAULT 0,
-  printed_at     DATETIME DEFAULT NULL,        -- set when admin prints the official certificate; gates Mark as Paid
+  printed_at     DATETIME DEFAULT NULL,        -- set when staff prints the official certificate; gates payment collection
   address        VARCHAR(255) NOT NULL DEFAULT '',
   contact_no     VARCHAR(30)  NOT NULL DEFAULT '',
   date_of_birth  DATE DEFAULT NULL,           -- snapshot from the resident, for printed certificates
@@ -469,7 +469,7 @@ BEGIN
     SET p_error = 'Request not found';
   ELSEIF NOT (
        (v_current_status = 'Pending' AND p_new_status IN ('Verified','Rejected'))
-    OR (v_current_status = 'Verified' AND p_new_status = 'Approved' AND p_actor_role = 'admin')
+    OR (v_current_status = 'Verified' AND p_new_status = 'Approved' AND p_actor_role = 'staff')
     OR (v_current_status = 'Approved' AND p_new_status = 'Ready for Pickup')
     OR (v_current_status = 'Ready for Pickup' AND p_new_status = 'Released')
   ) THEN

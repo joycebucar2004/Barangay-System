@@ -1,4 +1,4 @@
-import { Home, Plus, ClipboardList, Bell, Eye, Shield, Users, FileText, BarChart2, Settings, LogOut, Megaphone, Banknote, UserPlus } from "lucide-react";
+import { Home, Plus, ClipboardList, Bell, Eye, Shield, Users, FileText, BarChart2, Settings, LogOut, Megaphone, Banknote, UserPlus, Receipt } from "lucide-react";
 import { BarangayLogo } from "./BarangayLogo";
 import type { Role } from "../lib/api";
 
@@ -25,6 +25,7 @@ export function Sidebar({
     { id: "dashboard", label: "Dashboard", icon: <Home size={19} /> },
     { id: "new-request", label: "New Request", icon: <Plus size={19} /> },
     { id: "my-requests", label: "My Requests", icon: <ClipboardList size={19} /> },
+    { id: "expenses", label: "My Expenses", icon: <Receipt size={19} /> },
     { id: "notifications", label: "Notifications", icon: <Bell size={19} />, badge: notifCount },
     { id: "settings", label: "Settings", icon: <Settings size={19} /> },
   ];
@@ -33,9 +34,10 @@ export function Sidebar({
     { id: "walk-in", label: "Walk-in Request", icon: <UserPlus size={19} /> },
     { id: "queue", label: "Request Queue", icon: <ClipboardList size={19} /> },
     { id: "verified", label: "For Verification", icon: <Eye size={19} /> },
-    { id: "release", label: "Payment & Release", icon: <Banknote size={19} /> },
+    { id: "release", label: "Payments", icon: <Receipt size={19} /> },
+    { id: "released", label: "Released Documents", icon: <FileText size={19} /> },
+    { id: "billing", label: "Billing & Releasing", icon: <Banknote size={19} /> },
     { id: "residents", label: "Residents", icon: <Users size={19} /> },
-    { id: "reports", label: "Reports", icon: <BarChart2 size={19} /> },
     { id: "notifications", label: "Notifications", icon: <Bell size={19} />, badge: notifCount },
     { id: "settings", label: "Settings", icon: <Settings size={19} /> },
   ];

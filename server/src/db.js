@@ -30,6 +30,19 @@ export async function ensureWalkInSchema() {
   if (!(await columnExists("requests", "paid_at"))) {
     await pool.query("ALTER TABLE requests ADD COLUMN paid_at DATETIME DEFAULT NULL");
   }
+  await pool.query(`CREATE TABLE IF NOT EXISTS payments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    receipt_number VARCHAR(30) NOT NULL UNIQUE,
+    request_id VARCHAR(20) NOT NULL,
+    resident_id VARCHAR(20) NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    amount_tendered DECIMAL(10,2) NOT NULL,
+    change_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+    received_by VARCHAR(20) NOT NULL,
+    paid_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_payments_resident_date (resident_id, paid_at),
+    KEY idx_payments_request (request_id)
+  ) ENGINE=InnoDB`);
   if (!(await columnExists("document_types", "certificate_template"))) {
     await pool.query("ALTER TABLE document_types ADD COLUMN certificate_template MEDIUMTEXT DEFAULT NULL");
   }
@@ -137,6 +150,9 @@ function mapRequest(row) {
     updatedAt: row.updated_at,
     fee: Number(row.fee),
     paid: !!row.paid,
+    amountPaid: Number(row.amount_paid || 0),
+    balance: Math.max(0, Number(row.fee) - Number(row.amount_paid || 0)),
+    receipts: parseJsonArray(row.receipts).map((p) => ({ ...p, amount: Number(p.amount), amountTendered: Number(p.amountTendered), change: Number(p.change) })),
     printedAt: row.printed_at,
     address: row.address,
     contactNo: row.contact_no,
@@ -374,7 +390,24 @@ async function requestsWithResidentName(whereSql, params) {
      ${whereSql} ORDER BY r.submitted_at DESC`,
     params
   );
-  return attachFiles(rows.map(mapRequest));
+  const requests = rows.map(mapRequest);
+  if (requests.length) {
+    const ids = requests.map((r) => r.id);
+    const placeholders = ids.map(() => "?").join(",");
+    const [payments] = await pool.query(`SELECT receipt_number AS receiptNumber, request_id AS requestId, amount, amount_tendered AS amountTendered, change_amount AS changeAmount, paid_at AS paidAt FROM payments WHERE request_id IN (${placeholders}) ORDER BY paid_at, id`, ids);
+    const byRequest = new Map();
+    for (const p of payments) {
+      const list = byRequest.get(p.requestId) || [];
+      list.push({ receiptNumber: p.receiptNumber, amount: Number(p.amount), amountTendered: Number(p.amountTendered), change: Number(p.changeAmount), paidAt: p.paidAt });
+      byRequest.set(p.requestId, list);
+    }
+    for (const request of requests) {
+      request.receipts = byRequest.get(request.id) || [];
+      request.amountPaid = request.receipts.reduce((total, p) => total + p.amount, 0);
+      request.balance = Math.max(0, request.fee - request.amountPaid);
+    }
+  }
+  return attachFiles(requests);
 }
 
 export async function listRequestsForResident(residentId) {
@@ -410,6 +443,43 @@ export async function updateRequestStatus(id, { status, remarks, paid }) {
 export async function markRequestPaid(id) {
   await pool.query("UPDATE requests SET paid = 1, paid_at = NOW() WHERE id = ?", [id]);
   return getRequestById(id);
+}
+
+export async function recordRequestPayment(id, residentId, staffId, amountTendered) {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.query("SELECT fee, status FROM requests WHERE id = ? AND resident_id = ? FOR UPDATE", [id, residentId]);
+    if (!rows[0]) throw Object.assign(new Error("Request not found"), { status: 404 });
+    if (rows[0].status === "Rejected" || rows[0].status === "Cancelled") throw Object.assign(new Error("Cannot record payment on a rejected or cancelled request"), { status: 400 });
+    const [[paidRow]] = await connection.query("SELECT IFNULL(SUM(amount), 0) AS total FROM payments WHERE request_id = ?", [id]);
+    const balance = Math.max(0, Number(rows[0].fee) - Number(paidRow.total));
+    if (balance <= 0) throw Object.assign(new Error("Request is already fully paid"), { status: 400 });
+    const roundedTender = Math.round(amountTendered * 100) / 100;
+    const amount = Math.min(balance, roundedTender);
+    const change = Math.max(0, roundedTender - amount);
+    await connection.query("INSERT IGNORE INTO counters (name, value) VALUES ('receipt', 0)");
+    await connection.query("UPDATE counters SET value = value + 1 WHERE name = 'receipt'");
+    const [[seq]] = await connection.query("SELECT value FROM counters WHERE name = 'receipt'");
+    const receiptNumber = `RCPT-${new Date().getFullYear()}-${String(seq.value).padStart(6, "0")}`;
+    await connection.query("INSERT INTO payments (receipt_number, request_id, resident_id, amount, amount_tendered, change_amount, received_by) VALUES (?, ?, ?, ?, ?, ?, ?)", [receiptNumber, id, residentId, amount, roundedTender, change, staffId]);
+    await connection.query("UPDATE requests SET paid = ?, paid_at = IF(? >= fee, NOW(), paid_at) WHERE id = ?", [Number(paidRow.total) + amount >= Number(rows[0].fee) ? 1 : 0, Number(paidRow.total) + amount, id]);
+    await connection.commit();
+    return getRequestById(id);
+  } catch (err) {
+    await connection.rollback();
+    throw err;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function listResidentExpenses(residentId) {
+  const [rows] = await pool.query(`SELECT p.receipt_number AS receiptNumber, p.request_id AS requestId, r.doc_type AS docType,
+    r.purpose, p.amount, p.amount_tendered AS amountTendered, p.change_amount AS changeAmount,
+    p.paid_at AS paidAt FROM payments p JOIN requests r ON r.id = p.request_id
+    WHERE p.resident_id = ? ORDER BY p.paid_at DESC`, [residentId]);
+  return rows.map((row) => ({ ...row, change: Number(row.changeAmount), amount: Number(row.amount), amountTendered: Number(row.amountTendered) }));
 }
 
 export async function markRequestPrinted(id) {
@@ -601,4 +671,83 @@ export async function reportSourceSummary() {
     result.requestsThisMonth[r.source] = Number(r.thisMonth || 0);
   }
   return result;
+}
+
+export async function reportPeriodSummary({ start, end, bucketFormat, buckets }) {
+  const range = [start, end];
+  const [totalsRows, requestTrendRows, paymentTrendRows, legacyTrendRows, distributionRows, statusRows, sourceRows, paymentDocRows, legacyDocRows, outstandingRows, residentsRows] = await Promise.all([
+    pool.query(`SELECT COUNT(*) AS total, SUM(r.status = 'Released') AS released,
+        IFNULL(SUM(CASE
+          WHEN r.status IN ('Rejected', 'Cancelled') THEN COALESCE(p.total_paid, IF(r.paid = 1, r.fee, 0))
+          ELSE r.fee
+        END), 0) AS totalBilled
+      FROM requests r
+      LEFT JOIN (SELECT request_id, SUM(amount) AS total_paid FROM payments GROUP BY request_id) p ON p.request_id = r.id
+      WHERE r.submitted_at >= ? AND r.submitted_at < ?`, range),
+    pool.query("SELECT DATE_FORMAT(submitted_at, ?) AS bucket, COUNT(*) AS total FROM requests WHERE submitted_at >= ? AND submitted_at < ? GROUP BY bucket", [bucketFormat, ...range]),
+    pool.query("SELECT DATE_FORMAT(paid_at, ?) AS bucket, SUM(amount) AS total FROM payments WHERE paid_at >= ? AND paid_at < ? GROUP BY bucket", [bucketFormat, ...range]),
+    pool.query(`SELECT DATE_FORMAT(COALESCE(paid_at, updated_at), ?) AS bucket, SUM(fee) AS total FROM requests r
+      WHERE paid = 1 AND fee > 0 AND COALESCE(paid_at, updated_at) >= ? AND COALESCE(paid_at, updated_at) < ?
+      AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.request_id = r.id) GROUP BY bucket`, [bucketFormat, ...range]),
+    pool.query("SELECT doc_type AS name, COUNT(*) AS value FROM requests WHERE submitted_at >= ? AND submitted_at < ? GROUP BY doc_type", range),
+    pool.query("SELECT status, COUNT(*) AS count FROM requests WHERE submitted_at >= ? AND submitted_at < ? GROUP BY status", range),
+    pool.query("SELECT source, COUNT(*) AS total FROM requests WHERE submitted_at >= ? AND submitted_at < ? GROUP BY source", range),
+    pool.query(`SELECT r.doc_type AS name, SUM(p.amount) AS total, COUNT(*) AS count FROM payments p JOIN requests r ON r.id = p.request_id
+      WHERE p.paid_at >= ? AND p.paid_at < ? GROUP BY r.doc_type`, range),
+    pool.query(`SELECT doc_type AS name, SUM(fee) AS total, COUNT(*) AS count FROM requests r
+      WHERE paid = 1 AND fee > 0 AND COALESCE(paid_at, updated_at) >= ? AND COALESCE(paid_at, updated_at) < ?
+      AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.request_id = r.id) GROUP BY doc_type`, range),
+    pool.query(`SELECT IFNULL(SUM(GREATEST(r.fee - IFNULL(p.total_paid, 0), 0)), 0) AS outstanding, COUNT(*) AS count
+      FROM requests r LEFT JOIN (SELECT request_id, SUM(amount) AS total_paid FROM payments GROUP BY request_id) p ON p.request_id = r.id
+      WHERE r.submitted_at >= ? AND r.submitted_at < ? AND r.status NOT IN ('Rejected', 'Cancelled')
+      AND r.paid = 0 AND r.fee > IFNULL(p.total_paid, 0)`, range),
+    pool.query("SELECT SUM(account_type = 'Walk-in') AS walkIn, SUM(account_type = 'Online') AS online FROM users"),
+  ]);
+  const [[totals]] = totalsRows;
+  const [requestTrend] = requestTrendRows;
+  const [paymentTrend] = paymentTrendRows;
+  const [legacyTrend] = legacyTrendRows;
+  const [distribution] = distributionRows;
+  const [statuses] = statusRows;
+  const [sources] = sourceRows;
+  const [paymentDocs] = paymentDocRows;
+  const [legacyDocs] = legacyDocRows;
+  const [[outstanding]] = outstandingRows;
+  const [[residents]] = residentsRows;
+
+  const requestsByBucket = Object.fromEntries(requestTrend.map((row) => [row.bucket, Number(row.total)]));
+  const revenueByBucket = {};
+  for (const row of [...paymentTrend, ...legacyTrend]) revenueByBucket[row.bucket] = (revenueByBucket[row.bucket] || 0) + Number(row.total);
+  const monthly = buckets.map(({ key, label }) => ({ month: label, requests: requestsByBucket[key] || 0, revenue: revenueByBucket[key] || 0 }));
+  const byDocument = new Map();
+  for (const row of [...paymentDocs, ...legacyDocs]) {
+    const existing = byDocument.get(row.name) || { name: row.name, total: 0, count: 0 };
+    existing.total += Number(row.total);
+    existing.count += Number(row.count);
+    byDocument.set(row.name, existing);
+  }
+  const totalRevenue = monthly.reduce((sum, bucket) => sum + bucket.revenue, 0);
+  const sourceCounts = { Online: 0, "Walk-in": 0 };
+  for (const row of sources) sourceCounts[row.source] = Number(row.total);
+  const statusCounts = {};
+  for (const row of statuses) statusCounts[row.status] = Number(row.count);
+
+  return {
+    totalThisMonth: Number(totals.total || 0),
+    releasedThisMonth: Number(totals.released || 0),
+    totalBilled: Number(totals.totalBilled || 0),
+    revenue: totalRevenue,
+    revenueThisMonth: totalRevenue,
+    outstanding: Number(outstanding.outstanding || 0),
+    outstandingCount: Number(outstanding.count || 0),
+    revenueByDocType: [...byDocument.values()].sort((a, b) => b.total - a.total),
+    monthly,
+    distribution: distribution.map((row) => ({ name: row.name, value: Number(row.value) })),
+    statusCounts,
+    sources: {
+      requests: sourceCounts,
+      requestsThisMonth: sourceCounts,
+      residents: { Online: Number(residents.online || 0), "Walk-in": Number(residents.walkIn || 0) },
+    },
+  };
 }

@@ -43,6 +43,8 @@ export function ResidentDashboard({
   onDeleteAllNotifications: () => void;
 }) {
   const [selectedRequest, setSelectedRequest] = useState<ApiRequest | null>(null);
+  const [expensePeriod, setExpensePeriod] = useState<"monthly" | "yearly">("monthly");
+  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().slice(0, 7));
 
   // Keep the open modal's data in sync when the underlying request list updates
   // (e.g. after a status change), instead of showing a stale snapshot.
@@ -80,6 +82,37 @@ export function ResidentDashboard({
           onDelete={onDeleteNotification}
           onDeleteAll={onDeleteAllNotifications}
         />
+      </div>
+    );
+  }
+
+  if (section === "expenses") {
+    const expenseRows = requests.flatMap((request) => (request.receipts || []).map((receipt) => ({ ...receipt, requestId: request.id, docType: request.docType, purpose: request.purpose })));
+    const currentYear = new Date().getFullYear();
+    const selectedYear = expenseDate.slice(0, 4);
+    const visibleExpenses = expenseRows.filter((row) => {
+      const paidDate = new Date(row.paidAt);
+      const month = `${paidDate.getFullYear()}-${String(paidDate.getMonth() + 1).padStart(2, "0")}`;
+      return expensePeriod === "monthly" ? month === expenseDate : String(paidDate.getFullYear()) === selectedYear;
+    });
+    const total = visibleExpenses.reduce((sum, row) => sum + row.amount, 0);
+    return (
+      <div className="p-8 space-y-6">
+        <PageHeader icon={<ClipboardList size={22} />} title="My Expenses" subtitle="Track payments for your barangay document requests." />
+        <div className="ui-card p-5 flex flex-wrap items-end gap-4">
+          <label className="text-sm font-semibold text-muted-foreground">Report period
+            <select value={expensePeriod} onChange={(e) => setExpensePeriod(e.target.value as "monthly" | "yearly")} className="block mt-1 rounded-lg border border-border bg-white px-3 py-2 text-foreground">
+              <option value="monthly">Monthly</option><option value="yearly">Yearly</option>
+            </select>
+          </label>
+          <label className="text-sm font-semibold text-muted-foreground">{expensePeriod === "monthly" ? "Month" : "Year"}
+            <input type={expensePeriod === "monthly" ? "month" : "number"} min={expensePeriod === "yearly" ? "2000" : undefined} max={expensePeriod === "yearly" ? String(currentYear) : undefined} value={expensePeriod === "monthly" ? expenseDate : selectedYear} onChange={(e) => setExpenseDate(expensePeriod === "monthly" ? e.target.value : `${e.target.value}-01`)} className="block mt-1 rounded-lg border border-border bg-white px-3 py-2 text-foreground" />
+          </label>
+          <div className="ml-auto"><div className="text-sm text-muted-foreground">Total paid</div><div className="text-2xl font-bold text-foreground">₱{total.toFixed(2)}</div></div>
+        </div>
+        <div className="ui-table-card overflow-x-auto"><table className="w-full min-w-[760px]"><thead><tr className="ui-thead">{["Receipt", "Date", "Request", "Document", "Amount Paid"].map((h) => <th key={h} className="px-5 py-3.5 text-left text-sm font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>)}</tr></thead>
+          <tbody>{visibleExpenses.map((row) => <tr key={row.receiptNumber} className="border-t border-border"><td className="px-5 py-3 font-mono">{row.receiptNumber}</td><td className="px-5 py-3">{new Date(row.paidAt).toLocaleDateString()}</td><td className="px-5 py-3">{row.requestId}</td><td className="px-5 py-3">{row.docType}<div className="text-xs text-muted-foreground">{row.purpose}</div></td><td className="px-5 py-3 font-semibold">₱{row.amount.toFixed(2)}</td></tr>)}{visibleExpenses.length === 0 && <tr><td colSpan={5} className="ui-empty text-base">No payments in this period.</td></tr>}</tbody>
+        </table></div>
       </div>
     );
   }

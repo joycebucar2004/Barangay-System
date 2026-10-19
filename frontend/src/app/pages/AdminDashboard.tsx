@@ -28,7 +28,7 @@ import { AddUserModal } from "../components/AddUserModal";
 import { UserDetailModal } from "../components/UserDetailModal";
 import { NotificationsPanel } from "../components/NotificationsPanel";
 import { CertificateEditorModal } from "../components/CertificateEditorModal";
-import type { AnnouncementInput, CertificateContent, AnnouncementTag, ApiAnnouncement, ApiDocumentType, ApiDocumentTypeRequirement, ApiNotification, ApiRequest, ApiUser, ReportsSummary, RequestStatus, Role, UserProfileInput, UserStatus, UserDisplayStatus } from "../lib/api";
+import type { AnnouncementInput, CertificateContent, AnnouncementTag, ApiAnnouncement, ApiDocumentType, ApiDocumentTypeRequirement, ApiNotification, ApiRequest, ApiUser, RequestStatus, Role, UserProfileInput, UserStatus, UserDisplayStatus } from "../lib/api";
 
 const TABLE_HEADERS = ["Request ID", "Name", "Document / Purpose", "Status", "Payment", "Submitted", "Action"];
 const STATUS_ORDER: RequestStatus[] = ["Pending", "Verified", "Approved", "Ready for Pickup", "Released", "Rejected", "Cancelled"];
@@ -66,7 +66,6 @@ export function AdminDashboard({
   requests,
   docTypes,
   users,
-  reports,
   announcements,
   notifications,
   onStatusChange,
@@ -89,11 +88,10 @@ export function AdminDashboard({
   requests: ApiRequest[];
   docTypes: ApiDocumentType[];
   users: ApiUser[];
-  reports: ReportsSummary | null;
   announcements: ApiAnnouncement[];
   notifications: ApiNotification[];
   onStatusChange: (id: string, s: RequestStatus, remarks?: string) => void;
-  onMarkPaid: (id: string) => void;
+  onMarkPaid: (id: string, amountTendered: number) => Promise<void>;
   onSaveCertificateTemplate: (name: string, template: CertificateContent | null) => Promise<void>;
   onCreateUser: (payload: UserProfileInput & { role: Role }) => Promise<void>;
   onUpdateUserStatus: (id: string, status: UserStatus) => Promise<void>;
@@ -271,7 +269,7 @@ export function AdminDashboard({
   }
 
   if (section === "reports") {
-    return <ReportsView reports={reports} requests={requests} />;
+    return <ReportsView requests={requests} />;
   }
 
   if (section === "users") {
