@@ -40,6 +40,9 @@ export const pool = mysql.createPool({
   database: DB_NAME,
   waitForConnections: true,
   connectionLimit: 10,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0,
+  connectTimeout: 10000,
   // Return DATE/DATETIME/TIMESTAMP columns as plain strings ("2026-08-17", "2026-08-17 10:30:00")
   // instead of JS Date objects — avoids local-timezone off-by-one-day conversion bugs.
   dateStrings: true,

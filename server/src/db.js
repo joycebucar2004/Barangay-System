@@ -1,5 +1,18 @@
 import { pool } from "./mysql.js";
 
+const transientDatabaseErrors = new Set(["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EPIPE", "PROTOCOL_CONNECTION_LOST"]);
+
+async function queryWithRetry(sql, values) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await pool.query(sql, values);
+    } catch (error) {
+      if (attempt > 0 || !transientDatabaseErrors.has(error.code)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+}
+
 async function columnExists(table, column) {
   const [rows] = await pool.query(
     "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
@@ -676,7 +689,7 @@ export async function reportSourceSummary() {
 export async function reportPeriodSummary({ start, end, bucketFormat, buckets }) {
   const range = [start, end];
   const [totalsRows, requestTrendRows, paymentTrendRows, legacyTrendRows, distributionRows, statusRows, sourceRows, paymentDocRows, legacyDocRows, outstandingRows, residentsRows] = await Promise.all([
-    pool.query(`SELECT COUNT(*) AS total, SUM(r.status = 'Released') AS released,
+    queryWithRetry(`SELECT COUNT(*) AS total, SUM(r.status = 'Released') AS released,
         IFNULL(SUM(CASE
           WHEN r.status IN ('Rejected', 'Cancelled') THEN COALESCE(p.total_paid, IF(r.paid = 1, r.fee, 0))
           ELSE r.fee
@@ -684,24 +697,24 @@ export async function reportPeriodSummary({ start, end, bucketFormat, buckets })
       FROM requests r
       LEFT JOIN (SELECT request_id, SUM(amount) AS total_paid FROM payments GROUP BY request_id) p ON p.request_id = r.id
       WHERE r.submitted_at >= ? AND r.submitted_at < ?`, range),
-    pool.query("SELECT DATE_FORMAT(submitted_at, ?) AS bucket, COUNT(*) AS total FROM requests WHERE submitted_at >= ? AND submitted_at < ? GROUP BY bucket", [bucketFormat, ...range]),
-    pool.query("SELECT DATE_FORMAT(paid_at, ?) AS bucket, SUM(amount) AS total FROM payments WHERE paid_at >= ? AND paid_at < ? GROUP BY bucket", [bucketFormat, ...range]),
-    pool.query(`SELECT DATE_FORMAT(COALESCE(paid_at, updated_at), ?) AS bucket, SUM(fee) AS total FROM requests r
+    queryWithRetry("SELECT DATE_FORMAT(submitted_at, ?) AS bucket, COUNT(*) AS total FROM requests WHERE submitted_at >= ? AND submitted_at < ? GROUP BY bucket", [bucketFormat, ...range]),
+    queryWithRetry("SELECT DATE_FORMAT(paid_at, ?) AS bucket, SUM(amount) AS total FROM payments WHERE paid_at >= ? AND paid_at < ? GROUP BY bucket", [bucketFormat, ...range]),
+    queryWithRetry(`SELECT DATE_FORMAT(COALESCE(paid_at, updated_at), ?) AS bucket, SUM(fee) AS total FROM requests r
       WHERE paid = 1 AND fee > 0 AND COALESCE(paid_at, updated_at) >= ? AND COALESCE(paid_at, updated_at) < ?
       AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.request_id = r.id) GROUP BY bucket`, [bucketFormat, ...range]),
-    pool.query("SELECT doc_type AS name, COUNT(*) AS value FROM requests WHERE submitted_at >= ? AND submitted_at < ? GROUP BY doc_type", range),
-    pool.query("SELECT status, COUNT(*) AS count FROM requests WHERE submitted_at >= ? AND submitted_at < ? GROUP BY status", range),
-    pool.query("SELECT source, COUNT(*) AS total FROM requests WHERE submitted_at >= ? AND submitted_at < ? GROUP BY source", range),
-    pool.query(`SELECT r.doc_type AS name, SUM(p.amount) AS total, COUNT(*) AS count FROM payments p JOIN requests r ON r.id = p.request_id
+    queryWithRetry("SELECT doc_type AS name, COUNT(*) AS value FROM requests WHERE submitted_at >= ? AND submitted_at < ? GROUP BY doc_type", range),
+    queryWithRetry("SELECT status, COUNT(*) AS count FROM requests WHERE submitted_at >= ? AND submitted_at < ? GROUP BY status", range),
+    queryWithRetry("SELECT source, COUNT(*) AS total FROM requests WHERE submitted_at >= ? AND submitted_at < ? GROUP BY source", range),
+    queryWithRetry(`SELECT r.doc_type AS name, SUM(p.amount) AS total, COUNT(*) AS count FROM payments p JOIN requests r ON r.id = p.request_id
       WHERE p.paid_at >= ? AND p.paid_at < ? GROUP BY r.doc_type`, range),
-    pool.query(`SELECT doc_type AS name, SUM(fee) AS total, COUNT(*) AS count FROM requests r
+    queryWithRetry(`SELECT doc_type AS name, SUM(fee) AS total, COUNT(*) AS count FROM requests r
       WHERE paid = 1 AND fee > 0 AND COALESCE(paid_at, updated_at) >= ? AND COALESCE(paid_at, updated_at) < ?
       AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.request_id = r.id) GROUP BY doc_type`, range),
-    pool.query(`SELECT IFNULL(SUM(GREATEST(r.fee - IFNULL(p.total_paid, 0), 0)), 0) AS outstanding, COUNT(*) AS count
+    queryWithRetry(`SELECT IFNULL(SUM(GREATEST(r.fee - IFNULL(p.total_paid, 0), 0)), 0) AS outstanding, COUNT(*) AS count
       FROM requests r LEFT JOIN (SELECT request_id, SUM(amount) AS total_paid FROM payments GROUP BY request_id) p ON p.request_id = r.id
       WHERE r.submitted_at >= ? AND r.submitted_at < ? AND r.status NOT IN ('Rejected', 'Cancelled')
       AND r.paid = 0 AND r.fee > IFNULL(p.total_paid, 0)`, range),
-    pool.query("SELECT SUM(account_type = 'Walk-in') AS walkIn, SUM(account_type = 'Online') AS online FROM users"),
+    queryWithRetry("SELECT SUM(account_type = 'Walk-in') AS walkIn, SUM(account_type = 'Online') AS online FROM users"),
   ]);
   const [[totals]] = totalsRows;
   const [requestTrend] = requestTrendRows;
