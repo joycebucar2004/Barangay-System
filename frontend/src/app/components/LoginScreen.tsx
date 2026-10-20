@@ -104,7 +104,7 @@ export function LoginScreen({
     <div className="min-h-screen flex" style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <div className="relative hidden lg:flex lg:w-[55%] flex-col justify-between overflow-hidden p-12" style={{ background: "linear-gradient(145deg, #1a3a6b 0%, #0d2244 100%)" }}>
         <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full" style={{ background: "radial-gradient(circle, rgba(212,160,23,0.28) 0%, rgba(212,160,23,0) 70%)" }} />
-        <img src="/seals/barangay-campagao.jpg" alt="" aria-hidden className="pointer-events-none absolute -bottom-24 -right-24 h-[28rem] w-[28rem] rounded-full object-cover opacity-[0.07] mix-blend-luminosity" />
+        <img src="./seals/barangay-campagao.jpg" alt="" aria-hidden className="pointer-events-none absolute -bottom-24 -right-24 h-[28rem] w-[28rem] rounded-full object-cover opacity-[0.07] mix-blend-luminosity" />
         <div className="relative flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-16 h-16 rounded-xl bg-white/10 flex items-center justify-center border border-white/20">

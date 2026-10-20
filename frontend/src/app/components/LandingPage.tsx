@@ -214,8 +214,8 @@ export function LandingPage({
               <div className="absolute inset-[5rem] rounded-full" style={{ background: "radial-gradient(circle, rgba(212,160,23,0.35) 0%, rgba(212,160,23,0) 70%)" }} />
               <div className="seal-float relative" style={{ perspective: "1200px" }}>
                 <div className="seal-flip h-96 w-96">
-                  <img src="/seals/barangay-campagao.jpg" alt="" className="seal-face h-full w-full object-cover ring-8 ring-white/15 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.6)]" />
-                  <img src="/seals/municipality-bilar.jpg" alt="" className="seal-face back h-full w-full object-cover ring-8 ring-white/15 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.6)]" />
+                  <img src="./seals/barangay-campagao.jpg" alt="" className="seal-face h-full w-full object-cover ring-8 ring-white/15 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.6)]" />
+                  <img src="./seals/municipality-bilar.jpg" alt="" className="seal-face back h-full w-full object-cover ring-8 ring-white/15 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.6)]" />
                 </div>
               </div>
               <div className="seal-shadow absolute bottom-6 h-6 w-64 rounded-full bg-black/60 blur-md" />

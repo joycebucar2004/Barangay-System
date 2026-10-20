@@ -17,7 +17,7 @@ export function DashboardHero({ eyebrow, title, subtitle, actions = [] }: {
     >
       <div className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full" style={{ background: "radial-gradient(circle, rgba(212,160,23,0.35) 0%, rgba(212,160,23,0) 70%)" }} />
       <img
-        src="/seals/barangay-campagao.jpg"
+        src="./seals/barangay-campagao.jpg"
         alt=""
         aria-hidden
         className="pointer-events-none absolute -right-6 top-1/2 h-52 w-52 -translate-y-1/2 rounded-full object-cover opacity-[0.12] mix-blend-luminosity"

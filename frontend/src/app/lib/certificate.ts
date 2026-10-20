@@ -1,8 +1,8 @@
 import { api } from "./api";
 import type { ApiDocumentType, ApiRequest, CertificateContent } from "./api";
 
-const MUNICIPALITY_SEAL_URL = "/seals/municipality-bilar.jpg";
-const BARANGAY_SEAL_URL = "/seals/barangay-campagao.jpg";
+const MUNICIPALITY_SEAL_URL = "./seals/municipality-bilar.jpg";
+const BARANGAY_SEAL_URL = "./seals/barangay-campagao.jpg";
 
 // No officials directory exists yet — the signatory defaults to the seeded admin/Officer account.
 // The admin can change it per document type from the certificate template editor.
