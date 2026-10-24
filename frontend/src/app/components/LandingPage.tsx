@@ -62,10 +62,12 @@ export function LandingPage({
   docTypes,
   announcements,
   onSignIn,
+  onRegister,
 }: {
   docTypes: ApiDocumentType[];
   announcements: ApiAnnouncement[];
   onSignIn: () => void;
+  onRegister: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -126,6 +128,13 @@ export function LandingPage({
             >
               Sign In
             </button>
+            <button
+              onClick={onRegister}
+              className="px-7 py-3 rounded-lg border border-primary/30 bg-white text-primary text-base font-semibold hover:bg-primary/5 transition-colors shadow-sm"
+              style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
+            >
+              Register
+            </button>
           </nav>
 
           <button
@@ -153,6 +162,12 @@ export function LandingPage({
               className="w-full mt-1 px-4 py-3 rounded-lg bg-primary text-white text-base font-semibold"
             >
               Sign In
+            </button>
+            <button
+              onClick={onRegister}
+              className="w-full px-4 py-3 rounded-lg border border-primary/20 text-primary text-base font-semibold hover:bg-primary/5"
+            >
+              Register
             </button>
           </div>
         )}

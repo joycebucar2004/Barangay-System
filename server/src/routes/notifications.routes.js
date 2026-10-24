@@ -1,7 +1,6 @@
 import { Router } from "express";
 import {
   listNotificationsForUser,
-  listNotificationsForRole,
   markNotificationRead,
   markAllNotificationsRead,
   deleteNotification,
@@ -13,7 +12,7 @@ export const notificationsRouter = Router();
 
 notificationsRouter.get("/", authRequired, async (req, res, next) => {
   try {
-    const notifications = req.userRole === "resident" ? await listNotificationsForUser(req.userId) : await listNotificationsForRole(req.userRole);
+    const notifications = await listNotificationsForUser(req.userId);
     res.json({ notifications });
   } catch (err) {
     next(err);
@@ -22,7 +21,7 @@ notificationsRouter.get("/", authRequired, async (req, res, next) => {
 
 notificationsRouter.patch("/read-all", authRequired, async (req, res, next) => {
   try {
-    await markAllNotificationsRead(req.userId, req.userRole);
+    await markAllNotificationsRead(req.userId);
     res.json({ success: true });
   } catch (err) {
     next(err);
@@ -31,7 +30,7 @@ notificationsRouter.patch("/read-all", authRequired, async (req, res, next) => {
 
 notificationsRouter.patch("/:id/read", authRequired, async (req, res, next) => {
   try {
-    const notification = await markNotificationRead(req.params.id);
+    const notification = await markNotificationRead(req.params.id, req.userId);
     if (!notification) return res.status(404).json({ error: "Notification not found" });
     res.json({ notification });
   } catch (err) {
@@ -41,7 +40,7 @@ notificationsRouter.patch("/:id/read", authRequired, async (req, res, next) => {
 
 notificationsRouter.delete("/:id", authRequired, async (req, res, next) => {
   try {
-    const deleted = await deleteNotification(req.params.id, req.userId, req.userRole);
+    const deleted = await deleteNotification(req.params.id, req.userId);
     if (!deleted) return res.status(404).json({ error: "Notification not found" });
     res.json({ success: true });
   } catch (err) {
@@ -51,7 +50,7 @@ notificationsRouter.delete("/:id", authRequired, async (req, res, next) => {
 
 notificationsRouter.delete("/", authRequired, async (req, res, next) => {
   try {
-    await deleteAllNotifications(req.userId, req.userRole);
+    await deleteAllNotifications(req.userId);
     res.json({ success: true });
   } catch (err) {
     next(err);

@@ -27,6 +27,7 @@ import type {
 export default function App() {
   const [user, setUser] = useState<ApiUser | null>(null);
   const [showLanding, setShowLanding] = useState(true);
+  const [loginMode, setLoginMode] = useState<"login" | "register">("login");
   const [authChecked, setAuthChecked] = useState(false);
   const [activeSection, setActiveSection] = useState("dashboard");
   const [requests, setRequests] = useState<ApiRequest[]>([]);
@@ -54,7 +55,15 @@ export default function App() {
     api
       .me()
       .then(({ user }) => setUser(user))
-      .catch(() => setToken(null))
+      .catch(() => {
+        setToken(null);
+        setUser(null);
+        setRequests([]);
+        setNotifications([]);
+        setUsers([]);
+        setSessionPassword(null);
+        setShowLanding(true);
+      })
       .finally(() => setAuthChecked(true));
   }, []);
 
@@ -116,6 +125,12 @@ export default function App() {
     setActiveSection("dashboard");
     setShowLanding(true);
   }
+
+  useEffect(() => {
+    const handleUnauthorized = () => handleLogout();
+    window.addEventListener("barangay:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("barangay:unauthorized", handleUnauthorized);
+  }, []);
 
   async function handleStatusChange(id: string, status: RequestStatus, remarks?: string) {
     try {
@@ -292,14 +307,32 @@ export default function App() {
       return (
         <>
           <Toaster />
-          <LandingPage docTypes={docTypes} announcements={announcements} onSignIn={() => setShowLanding(false)} />
+          <LandingPage
+            docTypes={docTypes}
+            announcements={announcements}
+            onSignIn={() => {
+              setLoginMode("login");
+              setShowLanding(false);
+            }}
+            onRegister={() => {
+              setLoginMode("register");
+              setShowLanding(false);
+            }}
+          />
         </>
       );
     }
     return (
       <>
         <Toaster />
-        <LoginScreen onAuthenticated={handleAuthenticated} onBack={() => setShowLanding(true)} />
+        <LoginScreen
+          onAuthenticated={handleAuthenticated}
+          onBack={() => {
+            setLoginMode("login");
+            setShowLanding(true);
+          }}
+          initialMode={loginMode}
+        />
       </>
     );
   }

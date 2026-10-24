@@ -1,4 +1,4 @@
-import { Bell, BellOff, CheckCheck, Trash2, X, Users } from "lucide-react";
+import { Bell, BellOff, CheckCheck, Trash2, X } from "lucide-react";
 import { PageHeader } from "./PageHeader";
 import type { ApiNotification } from "../lib/api";
 
@@ -8,17 +8,12 @@ export function NotificationsPanel({
   onMarkAllRead,
   onDelete,
   onDeleteAll,
-  shared,
 }: {
   notifications: ApiNotification[];
   onRead: (id: string) => void;
   onMarkAllRead: () => void;
   onDelete: (id: string) => void;
   onDeleteAll: () => void;
-  // Staff/admin notifications are a shared team feed (not per-account) -- clearing or deleting
-  // one here removes it for every staff/admin user, not just the person clicking. Resident
-  // notifications are personal, so this stays false for them.
-  shared?: boolean;
 }) {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -36,10 +31,7 @@ export function NotificationsPanel({
             </button>
             <button
               onClick={() => {
-                const msg = shared
-                  ? "Delete all notifications? This clears the shared feed for every staff/admin account, not just yours. This can't be undone."
-                  : "Delete all notifications? This can't be undone.";
-                if (confirm(msg)) onDeleteAll();
+                if (confirm("Delete all notifications? This can't be undone.")) onDeleteAll();
               }}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-red-200 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"
             >
@@ -48,11 +40,6 @@ export function NotificationsPanel({
           </>
         )}
       </PageHeader>
-      {shared && (
-        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <Users size={13} /> Shared with the rest of your team — marking read or deleting here applies for everyone.
-        </p>
-      )}
       <div className="space-y-3 max-w-3xl">
         {notifications.length === 0 && (
           <div className="ui-card flex flex-col items-center gap-3 py-14 text-center">

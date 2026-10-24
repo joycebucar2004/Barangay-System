@@ -10,12 +10,14 @@ const inputClass = "w-full px-3.5 py-2.5 rounded-lg border border-border bg-[#f0
 export function LoginScreen({
   onAuthenticated,
   onBack,
+  initialMode = "login",
 }: {
   onAuthenticated: (token: string, user: ApiUser, password: string) => void;
   onBack?: () => void;
+  initialMode?: "login" | "register";
 }) {
   const [selectedRole, setSelectedRole] = useState<Role>("resident");
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register">(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");

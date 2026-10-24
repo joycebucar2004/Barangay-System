@@ -23,6 +23,11 @@ async function columnExists(table, column) {
 
 // Idempotent, non-destructive: only adds columns / relaxes NOT NULL on email, never drops data.
 export async function ensureWalkInSchema() {
+  // Bcrypt hashes are 60 characters today, but keep room for future password-hash formats.
+  // Widening this column also repairs older deployments that used a shorter VARCHAR length.
+  await pool.query("ALTER TABLE users MODIFY password_hash VARCHAR(255) NOT NULL");
+  await pool.query("ALTER TABLE staff MODIFY password_hash VARCHAR(255) NOT NULL");
+  await pool.query("ALTER TABLE admin MODIFY password_hash VARCHAR(255) NOT NULL");
   if (!(await columnExists("users", "account_type"))) {
     await pool.query("ALTER TABLE users ADD COLUMN account_type ENUM('Online','Walk-in') NOT NULL DEFAULT 'Online' AFTER status");
   }
@@ -511,9 +516,14 @@ export async function notifyUser(userId, message) {
 }
 
 export async function notifyRole(role, message) {
-  const id = await nextId("notification", "n");
-  await pool.query("INSERT INTO notifications (id, user_id, for_role, message, time, is_read) VALUES (?, NULL, ?, ?, NOW(), 0)", [id, role, message]);
-  return id;
+  const table = role === "admin" ? "admin" : role === "staff" ? "staff" : "users";
+  const statusFilter = role === "resident" ? " WHERE status = 'Approved' AND account_type = 'Online'" : "";
+  const [recipients] = await pool.query(`SELECT id FROM ${table}${statusFilter}`);
+  const ids = [];
+  for (const recipient of recipients) {
+    ids.push(await notifyUser(String(recipient.id), message));
+  }
+  return ids;
 }
 
 export async function listNotificationsForUser(userId) {
@@ -531,36 +541,27 @@ export async function getNotificationById(id) {
   return mapNotification(rows[0]);
 }
 
-export async function markNotificationRead(id) {
-  await pool.query("UPDATE notifications SET is_read = 1 WHERE id = ?", [id]);
+export async function markNotificationRead(id, userId) {
+  const notification = await getNotificationById(id);
+  if (!notification || notification.userId !== userId) return null;
+  await pool.query("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?", [id, userId]);
   return getNotificationById(id);
 }
 
-export async function markAllNotificationsRead(userId, role) {
-  if (role === "resident") {
-    await pool.query("UPDATE notifications SET is_read = 1 WHERE user_id = ?", [userId]);
-  } else {
-    await pool.query("UPDATE notifications SET is_read = 1 WHERE for_role = ?", [role]);
-  }
+export async function markAllNotificationsRead(userId) {
+  await pool.query("UPDATE notifications SET is_read = 1 WHERE user_id = ?", [userId]);
 }
 
-// Role-broadcast notifications (for_role set, user_id NULL) are shared by every staff/admin --
-// deleting one removes it for the whole role, same as marking it read already does.
-export async function deleteNotification(id, userId, role) {
+export async function deleteNotification(id, userId) {
   const notification = await getNotificationById(id);
   if (!notification) return false;
-  const owned = role === "resident" ? notification.userId === userId : notification.forRole === role;
-  if (!owned) return false;
+  if (notification.userId !== userId) return false;
   await pool.query("DELETE FROM notifications WHERE id = ?", [id]);
   return true;
 }
 
-export async function deleteAllNotifications(userId, role) {
-  if (role === "resident") {
-    await pool.query("DELETE FROM notifications WHERE user_id = ?", [userId]);
-  } else {
-    await pool.query("DELETE FROM notifications WHERE for_role = ?", [role]);
-  }
+export async function deleteAllNotifications(userId) {
+  await pool.query("DELETE FROM notifications WHERE user_id = ?", [userId]);
 }
 
 // ============================================================

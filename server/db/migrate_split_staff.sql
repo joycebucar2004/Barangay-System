@@ -11,6 +11,11 @@
 --
 -- Safe to re-run: every step below is guarded so running it twice does not duplicate rows or error.
 
+-- 0. Ensure existing password hashes are not truncated. Bcrypt hashes require 60 characters;
+--    VARCHAR(255) also leaves room for future password-hash formats.
+ALTER TABLE users MODIFY password_hash VARCHAR(255) NOT NULL;
+ALTER TABLE admin MODIFY password_hash VARCHAR(255) NOT NULL;
+
 -- 1. Create the staff table (same shape as users, minus the role column -- the table itself
 --    is the role now). No-op if it already exists.
 CREATE TABLE IF NOT EXISTS staff (
@@ -32,6 +37,8 @@ CREATE TABLE IF NOT EXISTS staff (
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_staff_email (email)
 ) ENGINE=InnoDB;
+
+ALTER TABLE staff MODIFY password_hash VARCHAR(255) NOT NULL;
 
 -- 2. Copy any existing staff rows out of users into staff. Only runs while users.role still
 --    exists (a re-run after step 5 has already dropped it is a no-op via the IF below), and

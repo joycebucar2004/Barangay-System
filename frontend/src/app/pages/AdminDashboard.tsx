@@ -262,7 +262,6 @@ export function AdminDashboard({
           onMarkAllRead={onMarkAllNotificationsRead}
           onDelete={onDeleteNotification}
           onDeleteAll={onDeleteAllNotifications}
-          shared
         />
       </div>
     );

@@ -199,6 +199,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const data = isJson ? await res.json() : null;
 
   if (!res.ok) {
+    if (res.status === 401 && token) {
+      setToken(null);
+      window.dispatchEvent(new Event("barangay:unauthorized"));
+    }
     throw new Error((data && data.error) || `Request failed (${res.status})`);
   }
   return data as T;

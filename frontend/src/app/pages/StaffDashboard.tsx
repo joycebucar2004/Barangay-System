@@ -444,10 +444,8 @@ export function StaffDashboard({
           onMarkAllRead={onMarkAllNotificationsRead}
           onDelete={onDeleteNotification}
           onDeleteAll={onDeleteAllNotifications}
-          shared
         />
       )}
     </div>
   );
 }
-
